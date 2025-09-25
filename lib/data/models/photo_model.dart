@@ -16,6 +16,7 @@ class PhotoModel extends Equatable {
   final String? ocrText;
   final Map<String, dynamic> metadata;
   final List<String> tags;
+  final String? assetEntityId; // AssetEntity ID for gallery change detection
 
   const PhotoModel({
     required this.id,
@@ -33,6 +34,7 @@ class PhotoModel extends Equatable {
     this.ocrText,
     this.metadata = const {},
     this.tags = const [],
+    this.assetEntityId,
   });
 
   factory PhotoModel.fromJson(Map<String, dynamic> json) {
@@ -52,6 +54,7 @@ class PhotoModel extends Equatable {
       ocrText: json['ocrText'] as String?,
       metadata: Map<String, dynamic>.from(json['metadata'] ?? {}),
       tags: List<String>.from(json['tags'] ?? []),
+      assetEntityId: json['assetEntityId'] as String?,
     );
   }
 
@@ -72,6 +75,7 @@ class PhotoModel extends Equatable {
       'ocrText': ocrText,
       'metadata': metadata,
       'tags': tags,
+      'assetEntityId': assetEntityId,
     };
   }
 
@@ -91,6 +95,7 @@ class PhotoModel extends Equatable {
     String? ocrText,
     Map<String, dynamic>? metadata,
     List<String>? tags,
+    String? assetEntityId,
   }) {
     return PhotoModel(
       id: id ?? this.id,
@@ -108,6 +113,7 @@ class PhotoModel extends Equatable {
       ocrText: ocrText ?? this.ocrText,
       metadata: metadata ?? this.metadata,
       tags: tags ?? this.tags,
+      assetEntityId: assetEntityId ?? this.assetEntityId,
     );
   }
 
@@ -128,5 +134,6 @@ class PhotoModel extends Equatable {
         ocrText,
         metadata,
         tags,
+        assetEntityId,
       ];
 }
