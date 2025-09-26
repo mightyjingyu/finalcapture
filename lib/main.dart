@@ -16,9 +16,10 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    print('✅ Firebase 초기화 성공');
   } catch (e) {
-    print('Firebase initialization error: $e');
-    // Firebase 초기화 실패 시 임시로 계속 진행
+    print('❌ Firebase 초기화 실패: $e');
+    // Firebase 초기화 실패 시에도 앱은 계속 실행
   }
   
   runApp(const KimchiJjimApp());

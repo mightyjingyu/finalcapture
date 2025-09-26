@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../providers/album_provider.dart';
 import '../providers/auth_provider.dart';
+import '../screens/category/category_photos_screen.dart';
 
 class AlbumGrid extends StatelessWidget {
   const AlbumGrid({super.key});
@@ -267,7 +268,19 @@ class _AlbumCard extends StatelessWidget {
       elevation: isPinned ? 4 : 2,
       child: InkWell(
         onTap: () {
-          // TODO: Navigate to album detail screen
+          // 카테고리 앨범인 경우 해당 카테고리 사진 화면으로 이동
+          if (AppConstants.defaultCategories.contains(album.name)) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => CategoryPhotosScreen(
+                  category: album.name,
+                  categoryIcon: album.iconPath ?? '📷',
+                ),
+              ),
+            );
+          } else {
+            // TODO: 일반 앨범 상세 화면으로 이동
+          }
         },
         onLongPress: () {
           _showAlbumOptions(context);

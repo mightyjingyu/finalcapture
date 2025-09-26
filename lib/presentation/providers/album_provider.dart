@@ -26,11 +26,19 @@ class AlbumProvider extends ChangeNotifier {
       _setLoading(true);
       _clearError();
       
+      print('📁 앨범 로드 시작: $userId');
       _albums = await _firestoreService.getUserAlbums(userId);
+      print('📁 로드된 앨범 수: ${_albums.length}');
+      
+      for (final album in _albums) {
+        print('📁 앨범: ${album.name} - 사진 수: ${album.photoCount}');
+      }
+      
       _categorizeAlbums();
       
     } catch (e) {
       _errorMessage = '앨범 로드 실패: $e';
+      print('❌ 앨범 로드 실패: $e');
     } finally {
       _setLoading(false);
     }

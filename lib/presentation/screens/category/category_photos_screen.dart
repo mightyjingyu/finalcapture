@@ -41,7 +41,7 @@ class CategoryPhotosScreen extends StatelessWidget {
                   Consumer2<AuthProvider, PhotoProvider>(
                     builder: (context, authProvider, photoProvider, child) {
                       final categoryPhotos = photoProvider.photos
-                          .where((photo) => photo.category == category)
+                          .where((photo) => photo.category == category && photo.userId == authProvider.firebaseUser!.uid)
                           .toList();
                       return Text(
                         '${categoryPhotos.length}개의 사진',
@@ -76,8 +76,9 @@ class CategoryPhotosScreen extends StatelessWidget {
             );
           }
 
+          // 사용자별로 필터링된 카테고리 사진만 표시
           final categoryPhotos = photoProvider.photos
-              .where((photo) => photo.category == category)
+              .where((photo) => photo.category == category && photo.userId == authProvider.firebaseUser!.uid)
               .toList();
 
           if (categoryPhotos.isEmpty) {
@@ -128,50 +129,58 @@ class CategoryPhotosScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(photo.fileName),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (photo.ocrText?.isNotEmpty == true) ...[
-              const Text(
-                '추출된 텍스트:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(8),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (photo.ocrText?.isNotEmpty == true) ...[
+                const Text(
+                  '추출된 텍스트:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                child: Text(photo.ocrText!),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    photo.ocrText!,
+                    softWrap: true,
+                    overflow: TextOverflow.visible,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Text('카테고리: ${photo.category}'),
+              Text('업로드 날짜: ${photo.createdAt.toString().split(' ')[0]}'),
+              if (photo.metadata?['confidence'] != null)
+                Text('신뢰도: ${(photo.metadata!['confidence'] * 100).toStringAsFixed(1)}%'),
+              if (photo.metadata?['reasoning'] != null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '분류 근거:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    photo.metadata!['reasoning'],
+                    style: const TextStyle(fontSize: 12),
+                    softWrap: true,
+                    overflow: TextOverflow.visible,
+                  ),
+                ),
+              ],
             ],
-            Text('카테고리: ${photo.category}'),
-            Text('업로드 날짜: ${photo.createdAt.toString().split(' ')[0]}'),
-            if (photo.metadata?['confidence'] != null)
-              Text('신뢰도: ${(photo.metadata!['confidence'] * 100).toStringAsFixed(1)}%'),
-            if (photo.metadata?['reasoning'] != null) ...[
-              const SizedBox(height: 8),
-              const Text(
-                '분류 근거:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  photo.metadata!['reasoning'],
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ],
-          ],
+          ),
         ),
         actions: [
           if (kIsWeb)
@@ -237,8 +246,9 @@ class CategoryPhotosScreen extends StatelessWidget {
 
   Future<void> _downloadCategoryPhotos(BuildContext context) async {
     final photoProvider = Provider.of<PhotoProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final categoryPhotos = photoProvider.photos
-        .where((photo) => photo.category == category)
+        .where((photo) => photo.category == category && photo.userId == authProvider.firebaseUser!.uid)
         .toList();
 
     if (categoryPhotos.isEmpty) {

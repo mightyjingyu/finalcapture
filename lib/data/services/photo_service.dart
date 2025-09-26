@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -200,31 +199,46 @@ class PhotoService {
   }
 
   // 새로운 스크린샷 감지 및 처리
-  Future<List<PhotoModel>> processNewScreenshots(String userId) async {
+  Future<List<PhotoModel>> processNewScreenshots(String userId, {bool forceReprocess = false}) async {
     final screenshots = await getLatestScreenshots();
     final processedPhotos = <PhotoModel>[];
 
-    // 기존에 처리된 사진들 가져오기 (최근 100개)
-    final existingPhotos = await _firestoreService.getUserPhotos(userId, limit: 100);
-    final existingAssetIds = existingPhotos
-        .where((p) => p.assetEntityId != null)
-        .map((p) => p.assetEntityId!)
-        .toSet();
+    Set<String> existingAssetIds = {};
+    Set<String> processedInThisRun = {}; // 이번 실행에서 처리된 ID 추적
+    
+    if (!forceReprocess) {
+      // 기존에 처리된 사진들 가져오기 (최근 100개)
+      final existingPhotos = await _firestoreService.getUserPhotos(userId, limit: 100);
+      existingAssetIds = existingPhotos
+          .where((p) => p.assetEntityId != null)
+          .map((p) => p.assetEntityId!)
+          .toSet();
+    }
 
-    print('📊 기존 처리된 사진 수: ${existingPhotos.length}');
+    print('📊 기존 처리된 사진 수: ${forceReprocess ? 0 : existingAssetIds.length}');
     print('📊 기존 AssetEntity ID 수: ${existingAssetIds.length}');
     print('📊 현재 스크린샷 수: ${screenshots.length}');
+    print('🔄 강제 재처리 모드: $forceReprocess');
 
     for (final screenshot in screenshots) {
       try {
         final file = await screenshot.file;
         if (file == null) continue;
 
-        // 이미 처리된 사진인지 확인 (AssetEntity ID로 비교)
-        if (existingAssetIds.contains(screenshot.id)) {
+        // 이번 실행에서 이미 처리된 사진인지 확인
+        if (processedInThisRun.contains(screenshot.id)) {
+          print('⏭️ 이번 실행에서 이미 처리된 스크린샷 건너뛰기: ${screenshot.id}');
+          continue;
+        }
+
+        // 강제 재처리가 아닌 경우에만 이미 처리된 사진인지 확인
+        if (!forceReprocess && existingAssetIds.contains(screenshot.id)) {
           print('⏭️ 이미 처리된 스크린샷 건너뛰기: ${screenshot.id}');
           continue;
         }
+
+        // 이번 실행에서 처리 중인 ID로 추가
+        processedInThisRun.add(screenshot.id);
 
         print('🔄 새 스크린샷 처리 시작: ${screenshot.id}');
 

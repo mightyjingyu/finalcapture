@@ -182,10 +182,11 @@ class FirestoreService {
     await batch.commit();
   }
 
-  Future<List<PhotoModel>> getAlbumPhotos(String albumId) async {
+  Future<List<PhotoModel>> getAlbumPhotos(String albumId, String userId) async {
     final snapshot = await _firestore
         .collection(AppConstants.photosCollection)
         .where('albumId', isEqualTo: albumId)
+        .where('userId', isEqualTo: userId)
         .orderBy('captureDate', descending: true)
         .get();
     
@@ -194,10 +195,11 @@ class FirestoreService {
         .toList();
   }
 
-  Stream<List<PhotoModel>> getAlbumPhotosStream(String albumId) {
+  Stream<List<PhotoModel>> getAlbumPhotosStream(String albumId, String userId) {
     return _firestore
         .collection(AppConstants.photosCollection)
         .where('albumId', isEqualTo: albumId)
+        .where('userId', isEqualTo: userId)
         .orderBy('captureDate', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs
@@ -206,19 +208,36 @@ class FirestoreService {
   }
 
   Future<List<PhotoModel>> getUserPhotos(String userId, {int? limit}) async {
-    Query query = _firestore
-        .collection(AppConstants.photosCollection)
-        .where('userId', isEqualTo: userId)
-        .orderBy('captureDate', descending: true);
+    print('📸 Firestore getUserPhotos 시작: $userId');
     
-    if (limit != null) {
-      query = query.limit(limit);
+    try {
+      // 임시로 단순 쿼리 사용 (인덱스 문제 해결)
+      Query query = _firestore
+          .collection(AppConstants.photosCollection)
+          .where('userId', isEqualTo: userId);
+      
+      if (limit != null) {
+        query = query.limit(limit);
+      }
+      
+      print('📸 Firestore 쿼리 실행 중...');
+      final snapshot = await query.get();
+      print('📸 Firestore 쿼리 결과: ${snapshot.docs.length}개 문서');
+      
+      final photos = snapshot.docs
+          .map((doc) => PhotoModel.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+          .toList();
+      
+      // 클라이언트에서 날짜순 정렬
+      photos.sort((a, b) => b.captureDate.compareTo(a.captureDate));
+      
+      print('📸 Firestore getUserPhotos 완료: ${photos.length}개 사진');
+      return photos;
+      
+    } catch (e) {
+      print('❌ Firestore getUserPhotos 오류: $e');
+      rethrow;
     }
-    
-    final snapshot = await query.get();
-    return snapshot.docs
-        .map((doc) => PhotoModel.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))
-        .toList();
   }
 
   Future<List<PhotoModel>> getFavoritePhotos(String userId) async {

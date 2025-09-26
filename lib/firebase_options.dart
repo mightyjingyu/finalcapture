@@ -58,11 +58,11 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBqI1FZiNzrWQ5GqKJk-abc123',
-    appId: '1:797406662895:ios:abc123',
+    apiKey: 'AIzaSyA0trlvF6pweK9X1fdFcRln4DFsGQnEOpc',
+    appId: '1:797406662895:ios:d3105384ed279d00610b1a',
     messagingSenderId: '797406662895',
     projectId: 'finalcapture',
-    storageBucket: 'finalcapture.appspot.com',
+    storageBucket: 'finalcapture.firebasestorage.app',
     iosBundleId: 'com.kimchijjim.captureapp.kimchiJjim',
   );
 

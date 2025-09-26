@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import '../../data/models/photo_model.dart';
+import '../../data/models/album_model.dart';
 import '../../data/services/photo_service.dart';
 import '../../data/services/firestore_service.dart';
 
@@ -18,7 +19,7 @@ class PhotoProvider extends ChangeNotifier {
   List<PhotoModel> _recentPhotos = [];
   List<PhotoModel> _favoritePhotos = [];
   List<AssetEntity> _latestScreenshots = [];
-  List<AssetEntity> _favoriteScreenshots = []; // 즐겨찾기된 스크린샷들
+  final List<AssetEntity> _favoriteScreenshots = []; // 즐겨찾기된 스크린샷들
   
   // 웹에서 이미지 캐시 (메모리 저장)
   final Map<String, Uint8List> _webImageCache = {};
@@ -240,7 +241,7 @@ class PhotoProvider extends ChangeNotifier {
   }
 
   // 새로운 스크린샷 처리
-  Future<List<PhotoModel>> processNewScreenshots(String userId) async {
+  Future<List<PhotoModel>> processNewScreenshots(String userId, {bool forceReprocess = false}) async {
     if (kIsWeb) {
       // 웹에서는 수동으로 사진을 선택하도록 안내
       _errorMessage = '웹에서는 "사진 업로드" 버튼을 사용해주세요.';
@@ -256,7 +257,7 @@ class PhotoProvider extends ChangeNotifier {
       _setProcessing(true);
       _clearError();
       
-      final newPhotos = await _photoService.processNewScreenshots(userId);
+      final newPhotos = await _photoService.processNewScreenshots(userId, forceReprocess: forceReprocess);
       
       // 로컬 목록 업데이트
       _photos.insertAll(0, newPhotos);
@@ -274,21 +275,43 @@ class PhotoProvider extends ChangeNotifier {
   // 사용자의 모든 사진 로드
   Future<void> loadUserPhotos(String userId) async {
     try {
+      print('📸 loadUserPhotos 시작: $userId');
       _setLoading(true);
       _clearError();
       
+      print('📸 사용자 사진 로드 시작: $userId');
+      
       // Firestore에서 사진 목록 로드
       final firestoreService = FirestoreService();
+      print('📸 FirestoreService 생성 완료');
+      
       _photos = await firestoreService.getUserPhotos(userId);
+      print('📸 Firestore에서 로드된 사진 수: ${_photos.length}');
+      
       _recentPhotos = _photos.take(20).toList();
+      print('📸 최근 사진 목록 생성 완료: ${_recentPhotos.length}개');
+      
+      // 카테고리별 사진 수 확인
+      final categoryCounts = <String, int>{};
+      for (final photo in _photos) {
+        categoryCounts[photo.category] = (categoryCounts[photo.category] ?? 0) + 1;
+      }
+      
+      print('📸 카테고리별 사진 수:');
+      for (final entry in categoryCounts.entries) {
+        print('📸 카테고리 "${entry.key}": ${entry.value}개 사진');
+      }
       
       // 웹에서 기존 사진들을 위한 이미지 캐시 초기화
       if (kIsWeb) {
         _initializeWebImageCache();
       }
       
+      print('📸 loadUserPhotos 완료');
+      
     } catch (e) {
       _errorMessage = '사진 로드 실패: $e';
+      print('❌ 사진 로드 실패: $e');
     } finally {
       _setLoading(false);
     }
@@ -379,12 +402,12 @@ class PhotoProvider extends ChangeNotifier {
   }
 
   // 앨범별 사진 로드
-  Future<List<PhotoModel>> loadAlbumPhotos(String albumId) async {
+  Future<List<PhotoModel>> loadAlbumPhotos(String albumId, String userId) async {
     try {
       _clearError();
       
       final firestoreService = FirestoreService();
-      return await firestoreService.getAlbumPhotos(albumId);
+      return await firestoreService.getAlbumPhotos(albumId, userId);
     } catch (e) {
       _errorMessage = '앨범 사진 로드 실패: $e';
       return [];
@@ -506,19 +529,22 @@ class PhotoProvider extends ChangeNotifier {
   }
 
   // 수동 새로고침 - 갤러리의 최신 스크린샷 반영
-  Future<void> refresh(String userId) async {
+  Future<void> refresh(String userId, {bool forceReprocess = false}) async {
     try {
       _setLoading(true);
       _clearError();
       
-      print('🔄 수동 새로고침 시작...');
+      print('🔄 수동 새로고침 시작... (강제 재처리: $forceReprocess)');
+      
+      // 0. 기본 앨범들 생성 (없는 경우에만)
+      await createDefaultAlbums(userId);
       
       // 1. 최신 스크린샷 로드 (갤러리에서 직접 가져오기)
       await loadLatestScreenshots();
       
       // 2. 새로 추가된 스크린샷 처리 (OCR 및 분류)
       print('📸 새 스크린샷 처리 시작...');
-      final processedPhotos = await processNewScreenshots(userId);
+      final processedPhotos = await _photoService.processNewScreenshots(userId, forceReprocess: forceReprocess);
       
       if (processedPhotos.isNotEmpty) {
         print('✅ ${processedPhotos.length}개 새 스크린샷 처리 완료');
@@ -583,6 +609,92 @@ class PhotoProvider extends ChangeNotifier {
   // AssetEntity가 즐겨찾기인지 확인
   bool isAssetFavorite(AssetEntity asset) {
     return _favoriteScreenshots.any((fav) => fav.id == asset.id);
+  }
+
+  // 기본 앨범들 생성
+  Future<void> createDefaultAlbums(String userId) async {
+    try {
+      print('📁 기본 앨범 생성 시작: $userId');
+      
+      final firestoreService = FirestoreService();
+      final existingAlbums = await firestoreService.getUserAlbums(userId);
+      
+      print('📁 기존 앨범 수: ${existingAlbums.length}');
+      
+      // 기본 카테고리들
+      final defaultCategories = [
+        '옷',
+        '제품', 
+        '정보/참고용',
+        '일정/예약',
+        '증빙/거래',
+        '재미/밈/감정',
+        '학습/업무 메모',
+        '대화/메시지',
+      ];
+      
+      int createdCount = 0;
+      
+      for (int i = 0; i < defaultCategories.length; i++) {
+        final category = defaultCategories[i];
+        
+        // 이미 존재하는 앨범인지 확인
+        final exists = existingAlbums.any((album) => album.name == category);
+        
+        if (!exists) {
+          // 색상 코드 생성
+          final colorCode = '#${(0xFF000000 | (i * 0x123456)).toRadixString(16).substring(2)}';
+          
+          final album = AlbumModel(
+            id: '', // Firestore에서 생성됨
+            name: category,
+            description: '$category 관련 사진들',
+            iconPath: _getCategoryIconPath(category),
+            userId: userId,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            photoCount: 0,
+            colorCode: colorCode,
+            isDefault: true,
+          );
+          
+          await firestoreService.createAlbum(album);
+          createdCount++;
+          print('📁 앨범 생성: $category');
+        } else {
+          print('📁 앨범 이미 존재: $category');
+        }
+      }
+      
+      print('✅ 기본 앨범 생성 완료: $createdCount개 새로 생성');
+      
+    } catch (e) {
+      print('❌ 기본 앨범 생성 실패: $e');
+    }
+  }
+
+  // 카테고리별 아이콘 경로 반환
+  String _getCategoryIconPath(String category) {
+    switch (category) {
+      case '옷':
+        return 'assets/icons/clothes.png';
+      case '제품':
+        return 'assets/icons/product.png';
+      case '정보/참고용':
+        return 'assets/icons/info.png';
+      case '일정/예약':
+        return 'assets/icons/schedule.png';
+      case '증빙/거래':
+        return 'assets/icons/receipt.png';
+      case '재미/밈/감정':
+        return 'assets/icons/fun.png';
+      case '학습/업무 메모':
+        return 'assets/icons/work.png';
+      case '대화/메시지':
+        return 'assets/icons/message.png';
+      default:
+        return 'assets/icons/default.png';
+    }
   }
 
   // 폴더 위치 정보 가져오기

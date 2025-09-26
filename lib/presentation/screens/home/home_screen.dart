@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -98,9 +97,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _handleRefresh() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final photoProvider = Provider.of<PhotoProvider>(context, listen: false);
+    final albumProvider = Provider.of<AlbumProvider>(context, listen: false);
 
     if (authProvider.isAuthenticated) {
-      await photoProvider.refresh(authProvider.firebaseUser!.uid);
+      final userId = authProvider.firebaseUser!.uid;
+      
+      // 사진 새로고침 (새로 추가된 사진만 처리 - API 비용 절약)
+      await photoProvider.refresh(userId, forceReprocess: false);
+      
+      // 앨범 데이터도 새로고침
+      await albumProvider.loadUserAlbums(userId);
     }
   }
 
@@ -141,6 +147,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
         ),
         actions: [
+          // 강제 OCR 재처리 버튼
+          IconButton(
+            onPressed: () async {
+              final user = context.read<AuthProvider>().currentUser;
+              if (user != null) {
+                await context.read<PhotoProvider>().refresh(user.uid, forceReprocess: true);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('모든 스크린샷을 다시 OCR 분석합니다... (API 비용 발생)'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              }
+            },
+            icon: const Icon(Icons.refresh),
+            tooltip: '강제 OCR 재처리 (API 비용 발생)',
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {

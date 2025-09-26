@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import '../../core/constants/app_constants.dart';
 import 'photo_service.dart';
@@ -7,6 +8,147 @@ import 'photo_service.dart';
 class GeminiService {
   final Dio _dio = Dio();
   final String _apiKey = 'AIzaSyDARcqzcmqYXHMMTwZxFB_xe2H5jh0zm0M';
+
+  // 바이트 데이터로 이미지 OCR 및 카테고리 분류 (웹용)
+  Future<OCRResult> processImageBytes(Uint8List imageBytes, String fileName) async {
+    try {
+      print('🔄 바이트 데이터 처리 중: $fileName');
+      print('📊 이미지 크기: ${imageBytes.length} bytes');
+      final base64Image = base64Encode(imageBytes);
+      print('🔤 Base64 인코딩 완료: ${base64Image.length} characters');
+
+      print('🤖 Gemini API 요청 구성 중...');
+      // Gemini API 요청 구성
+      final requestData = {
+        'contents': [
+          {
+            'parts': [
+              {
+                'text': '''
+이 스크린샷 이미지를 분석하여 카테고리를 분류해주세요.
+
+**분석 단계:**
+1. 이미지에 있는 모든 텍스트를 OCR로 추출
+2. 이미지의 시각적 요소 분석 (UI, 레이아웃, 색상 등)
+3. 텍스트와 시각적 요소를 종합하여 카테고리 분류
+
+**카테고리 분류 기준:**
+- **정보/참고용**: 일반적인 정보, 뉴스, 문서, 웹페이지, 참고 자료
+- **대화/메시지**: 채팅, 메신저, 카카오톡, 문자, 소셜미디어 대화
+- **학습/업무 메모**: 공부 자료, 노트, 업무 문서, 프레젠테이션, 강의
+- **재미/밈/감정**: 유머, 밈, 재미있는 이미지, 감정 표현
+- **일정/예약**: 캘린더, 일정표, 예약 확인서, 시간표
+- **증빙/거래**: 영수증, 결제 내역, 계좌 정보, 거래 증명서
+- **옷**: 의류, 패션, 쇼핑몰 상품, 옷 관련 정보
+- **제품**: 전자제품, 생활용품, 상품 정보, 리뷰
+
+**응답 형식:**
+{
+  "extracted_text": "추출된 텍스트",
+  "category": "분류된 카테고리",
+  "confidence": 0.95,
+  "tags": ["태그1", "태그2", "태그3"],
+  "reasoning": "분류한 구체적인 이유와 근거를 상세히 설명"
+}
+
+**중요:** 텍스트가 없거나 읽을 수 없는 경우에도 이미지의 시각적 특성을 바탕으로 분류해주세요.
+'''
+              },
+              {
+                'inline_data': {
+                  'mime_type': 'image/jpeg',
+                  'data': base64Image
+                }
+              }
+            ]
+          }
+        ],
+        'generationConfig': {
+          'temperature': 0.4,
+          'topK': 32,
+          'topP': 1,
+          'maxOutputTokens': 4096,
+        },
+        'safetySettings': [
+          {
+            'category': 'HARM_CATEGORY_HARASSMENT',
+            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
+          },
+          {
+            'category': 'HARM_CATEGORY_HATE_SPEECH',
+            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
+          },
+          {
+            'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
+          },
+          {
+            'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
+            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
+          }
+        ]
+      };
+
+      print('📡 Gemini API 호출 중...');
+      final response = await _dio.post(
+        '${AppConstants.geminiApiUrl}?key=$_apiKey',
+        data: requestData,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+
+      print('📡 API 응답 상태: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final responseData = response.data;
+        final content = responseData['candidates'][0]['content']['parts'][0]['text'];
+        print('📝 API 응답 내용: $content');
+        
+        // JSON 응답 파싱
+        try {
+          print('🔍 JSON 파싱 시도 중...');
+          final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(content);
+          if (jsonMatch != null) {
+            final jsonStr = jsonMatch.group(0)!;
+            print('📋 추출된 JSON: $jsonStr');
+            final parsedData = json.decode(jsonStr);
+            
+            final result = OCRResult(
+              text: parsedData['extracted_text'] ?? '',
+              category: _validateCategory(parsedData['category'] ?? '정보/참고용'),
+              confidence: (parsedData['confidence'] ?? 0.8).toDouble(),
+              tags: List<String>.from(parsedData['tags'] ?? []),
+              reasoning: parsedData['reasoning'] ?? '분류 근거 없음',
+            );
+            print('✅ OCR 결과: ${result.category} (신뢰도: ${result.confidence})');
+            print('📝 분류 근거: ${result.reasoning}');
+            print('🏷️ 태그: ${result.tags}');
+            print('📄 추출된 텍스트: ${result.text}');
+            return result;
+          }
+        } catch (e) {
+          print('❌ JSON parsing error: $e');
+        }
+        
+        // JSON 파싱 실패 시 폴백 처리
+        return _fallbackProcessing(content);
+      } else {
+        throw Exception('Gemini API Error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Gemini Service Error: $e');
+      // API 호출 실패 시 기본값 반환
+      return OCRResult(
+        text: '',
+        category: '정보/참고용',
+        confidence: 0.5,
+        tags: ['자동분류실패'],
+        reasoning: 'API 호출 실패: $e',
+      );
+    }
+  }
 
   // 이미지 OCR 및 카테고리 분류
   Future<OCRResult> processImage(File imageFile) async {
@@ -26,29 +168,33 @@ class GeminiService {
             'parts': [
               {
                 'text': '''
-이 스크린샷 이미지를 분석해주세요:
+이 스크린샷 이미지를 분석하여 카테고리를 분류해주세요.
 
-1. 이미지에 있는 모든 텍스트를 OCR로 추출해주세요.
-2. 다음 카테고리 중 하나로 분류해주세요:
-   - 정보/참고용
-   - 대화/메시지
-   - 학습/업무 메모
-   - 재미/밈/감정
-   - 일정/예약
-   - 증빙/거래
-   - 옷
-   - 제품
+**분석 단계:**
+1. 이미지에 있는 모든 텍스트를 OCR로 추출
+2. 이미지의 시각적 요소 분석 (UI, 레이아웃, 색상 등)
+3. 텍스트와 시각적 요소를 종합하여 카테고리 분류
 
-3. 응답은 다음 JSON 형식으로 해주세요:
+**카테고리 분류 기준:**
+- **정보/참고용**: 일반적인 정보, 뉴스, 문서, 웹페이지, 참고 자료
+- **대화/메시지**: 채팅, 메신저, 카카오톡, 문자, 소셜미디어 대화
+- **학습/업무 메모**: 공부 자료, 노트, 업무 문서, 프레젠테이션, 강의
+- **재미/밈/감정**: 유머, 밈, 재미있는 이미지, 감정 표현
+- **일정/예약**: 캘린더, 일정표, 예약 확인서, 시간표
+- **증빙/거래**: 영수증, 결제 내역, 계좌 정보, 거래 증명서
+- **옷**: 의류, 패션, 쇼핑몰 상품, 옷 관련 정보
+- **제품**: 전자제품, 생활용품, 상품 정보, 리뷰
+
+**응답 형식:**
 {
   "extracted_text": "추출된 텍스트",
   "category": "분류된 카테고리",
   "confidence": 0.95,
   "tags": ["태그1", "태그2", "태그3"],
-  "reasoning": "분류 이유"
+  "reasoning": "분류한 구체적인 이유와 근거를 상세히 설명"
 }
 
-텍스트가 없거나 읽을 수 없는 경우 extracted_text를 빈 문자열로 하고, 이미지의 시각적 특성을 바탕으로 분류해주세요.
+**중요:** 텍스트가 없거나 읽을 수 없는 경우에도 이미지의 시각적 특성을 바탕으로 분류해주세요.
 '''
               },
               {
@@ -118,8 +264,12 @@ class GeminiService {
               category: _validateCategory(parsedData['category'] ?? '정보/참고용'),
               confidence: (parsedData['confidence'] ?? 0.8).toDouble(),
               tags: List<String>.from(parsedData['tags'] ?? []),
+              reasoning: parsedData['reasoning'] ?? '분류 근거 없음',
             );
             print('✅ OCR 결과: ${result.category} (신뢰도: ${result.confidence})');
+            print('📝 분류 근거: ${result.reasoning}');
+            print('🏷️ 태그: ${result.tags}');
+            print('📄 추출된 텍스트: ${result.text}');
             return result;
           }
         } catch (e) {
@@ -139,6 +289,7 @@ class GeminiService {
         category: '정보/참고용',
         confidence: 0.5,
         tags: ['자동분류실패'],
+        reasoning: 'API 호출 실패: $e',
       );
     }
   }
@@ -208,10 +359,11 @@ class GeminiService {
     }
     
     return OCRResult(
-      text: text.length > 100 ? text.substring(0, 100) + '...' : text,
+      text: text.length > 100 ? '${text.substring(0, 100)}...' : text,
       category: category,
       confidence: 0.6,
       tags: ['자동분류'],
+      reasoning: 'JSON 파싱 실패로 키워드 기반 분류 사용',
     );
   }
 

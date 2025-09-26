@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/photo_provider.dart';
 import '../auth/login_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -157,6 +158,14 @@ class SettingsScreen extends StatelessWidget {
                         // TODO: Clean storage
                       },
                     ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.folder),
+                      title: const Text('폴더 위치'),
+                      subtitle: const Text('분류된 사진이 저장되는 위치'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showFolderLocationDialog(context),
+                    ),
                   ],
                 ),
               ),
@@ -305,6 +314,74 @@ class SettingsScreen extends StatelessWidget {
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFolderLocationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.folder, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('폴더 위치'),
+          ],
+        ),
+        content: FutureBuilder<String>(
+          future: Provider.of<PhotoProvider>(context, listen: false).getFolderLocationInfo(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            
+            if (snapshot.hasError) {
+              return Text('오류: ${snapshot.error}');
+            }
+            
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '분류된 사진이 저장되는 위치:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    snapshot.data ?? '정보를 가져올 수 없습니다.',
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '💡 팁:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '• iOS: Photos 앱에서 확인하세요\n'
+                  '• Android: 파일 관리자에서 Downloads/FinalCapture 폴더를 확인하세요\n'
+                  '• 웹: 브라우저의 다운로드 폴더를 확인하세요',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('확인'),
           ),
         ],
       ),
