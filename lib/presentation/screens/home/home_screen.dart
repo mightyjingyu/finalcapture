@@ -67,8 +67,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         albumProvider.loadUserAlbums(userId),
       ]);
 
-      // 새로운 스크린샷 처리
-      await photoProvider.processNewScreenshots(userId);
+      // 자동 분류 제거 - 사용자가 수동으로 분류시작 버튼을 눌러야 함
 
     } catch (e) {
       print('App initialization error: $e');
@@ -107,6 +106,43 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       
       // 앨범 데이터도 새로고침
       await albumProvider.loadUserAlbums(userId);
+    }
+  }
+
+  Future<void> _startClassification() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final photoProvider = Provider.of<PhotoProvider>(context, listen: false);
+    final albumProvider = Provider.of<AlbumProvider>(context, listen: false);
+
+    if (!authProvider.isAuthenticated) return;
+
+    try {
+      final userId = authProvider.firebaseUser!.uid;
+      
+      // 분류 시작 (이미 분류된 사진도 재분류)
+      await photoProvider.startClassification(userId);
+      
+      // 앨범 데이터도 새로고침
+      await albumProvider.loadUserAlbums(userId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('분류가 완료되었습니다!'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('분류 중 오류가 발생했습니다: $e'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -314,19 +350,56 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: AppConstants.gridCrossAxisCount,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: AppConstants.gridAspectRatio,
-      ),
-      itemCount: photoProvider.latestScreenshots.length,
-      itemBuilder: (context, index) {
-        final asset = photoProvider.latestScreenshots[index];
-        return _buildAssetTile(asset);
-      },
+    return Column(
+      children: [
+        // 분류시작 버튼
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          child: ElevatedButton.icon(
+            onPressed: photoProvider.isProcessing ? null : () => _startClassification(),
+            icon: photoProvider.isProcessing 
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.auto_awesome),
+            label: Text(
+              photoProvider.isProcessing ? '분류 중...' : '분류시작',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        // 사진 그리드
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: AppConstants.gridCrossAxisCount,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: AppConstants.gridAspectRatio,
+            ),
+            itemCount: photoProvider.latestScreenshots.length,
+            itemBuilder: (context, index) {
+              final asset = photoProvider.latestScreenshots[index];
+              return _buildAssetTile(asset);
+            },
+          ),
+        ),
+      ],
     );
   }
 

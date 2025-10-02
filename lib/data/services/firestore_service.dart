@@ -209,6 +209,7 @@ class FirestoreService {
 
   Future<List<PhotoModel>> getUserPhotos(String userId, {int? limit}) async {
     print('📸 Firestore getUserPhotos 시작: $userId');
+    print('🔍 쿼리 조건: userId = $userId');
     
     try {
       // 임시로 단순 쿼리 사용 (인덱스 문제 해결)
@@ -223,6 +224,12 @@ class FirestoreService {
       print('📸 Firestore 쿼리 실행 중...');
       final snapshot = await query.get();
       print('📸 Firestore 쿼리 결과: ${snapshot.docs.length}개 문서');
+      
+      // 각 문서의 userId 확인
+      for (var doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        print('📄 문서 ID: ${doc.id}, userId: ${data['userId']}');
+      }
       
       final photos = snapshot.docs
           .map((doc) => PhotoModel.fromJson({...doc.data() as Map<String, dynamic>, 'id': doc.id}))

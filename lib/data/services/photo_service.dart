@@ -114,7 +114,7 @@ class PhotoService {
     return images;
   }
 
-  // 최신 스크린샷 가져오기
+  // 최신 스크린샷 가져오기 (실제로는 모든 최신 사진을 가져옴)
   Future<List<AssetEntity>> getLatestScreenshots({int count = 50}) async {
     if (kIsWeb) {
       // 웹에서는 빈 리스트 반환 (photo_manager가 웹에서 지원되지 않음)
@@ -130,20 +130,25 @@ class PhotoService {
     print('📸 갤러리 접근 권한 확인 완료');
 
     try {
-      // 스크린샷 앨범만 가져오기
-      final screenshotAlbums = await PhotoManager.getAssetPathList(
+      // 모든 앨범 가져오기
+      final allAlbums = await PhotoManager.getAssetPathList(
         type: RequestType.image,
         hasAll: false,
       );
       
-      print('📁 전체 앨범 수: ${screenshotAlbums.length}');
+      print('📁 전체 앨범 수: ${allAlbums.length}');
       
-      // 스크린샷 앨범 찾기
+      // 스크린샷 앨범 우선 찾기
       AssetPathEntity? screenshotAlbum;
-      for (final album in screenshotAlbums) {
-        if (album.name.toLowerCase().contains('screenshot') || 
-            album.name.toLowerCase().contains('스크린샷')) {
+      for (final album in allAlbums) {
+        final albumName = album.name.toLowerCase();
+        print('📁 앨범 확인: $albumName');
+        if (albumName.contains('screenshot') || 
+            albumName.contains('스크린샷') ||
+            albumName.contains('screen') ||
+            albumName.contains('capture')) {
           screenshotAlbum = album;
+          print('📷 스크린샷 앨범 발견: ${album.name}');
           break;
         }
       }
@@ -158,7 +163,7 @@ class PhotoService {
       }
       
       // 스크린샷 앨범이 없는 경우, 전체 사진에서 스크린샷만 필터링
-      print('⚠️ 스크린샷 앨범을 찾을 수 없어 전체 사진에서 필터링합니다.');
+      print('⚠️ 스크린샷 앨범을 찾을 수 없어 전체 사진에서 스크린샷을 필터링합니다.');
       final allPhotos = await PhotoManager.getAssetPathList(
         type: RequestType.image,
         onlyAll: true,
@@ -170,18 +175,24 @@ class PhotoService {
           end: count * 3, // 더 많이 가져와서 필터링
         );
         
-        // 스크린샷만 필터링 (파일명이나 메타데이터 기반)
+        // 스크린샷만 필터링 (파일명, 경로, 메타데이터 기반)
         final screenshots = <AssetEntity>[];
         for (final asset in allAssets) {
           final fileName = asset.title ?? '';
           final filePath = asset.relativePath ?? '';
+          final assetId = asset.id;
           
           // 스크린샷 파일명 패턴 확인
           if (fileName.toLowerCase().contains('screenshot') ||
               fileName.toLowerCase().contains('스크린샷') ||
+              fileName.toLowerCase().contains('screen') ||
+              fileName.toLowerCase().contains('capture') ||
               filePath.toLowerCase().contains('screenshot') ||
-              filePath.toLowerCase().contains('스크린샷')) {
+              filePath.toLowerCase().contains('스크린샷') ||
+              filePath.toLowerCase().contains('screen') ||
+              filePath.toLowerCase().contains('capture')) {
             screenshots.add(asset);
+            print('📷 스크린샷 발견: $fileName (경로: $filePath)');
             if (screenshots.length >= count) break;
           }
         }
@@ -270,16 +281,57 @@ class PhotoService {
           assetEntityId: screenshot.id, // AssetEntity ID 추가
         );
 
-        // Firestore에 저장
-        final photoId = await _firestoreService.createPhoto(photoModel);
-        final savedPhoto = photoModel.copyWith(id: photoId);
+        // Firestore에 저장 또는 업데이트
+        PhotoModel savedPhoto;
+        if (forceReprocess) {
+          // 재분류 시: 기존 사진이 있는지 확인하고 업데이트
+          final existingPhotos = await _firestoreService.getUserPhotos(userId, limit: 100);
+          final existingPhoto = existingPhotos.firstWhere(
+            (p) => p.assetEntityId == screenshot.id,
+            orElse: () => PhotoModel.empty(),
+          );
+          
+          if (existingPhoto.id.isNotEmpty) {
+            // 기존 사진 업데이트
+            final updatedPhoto = existingPhoto.copyWith(
+              localPath: movedFilePath,
+              fileName: path.basename(movedFilePath),
+              category: ocrResult.category,
+              ocrText: ocrResult.text,
+              albumId: await getOrCreateAlbumForCategory(userId, ocrResult.category),
+              updatedAt: DateTime.now(),
+              metadata: {
+                ...existingPhoto.metadata,
+                'confidence': ocrResult.confidence,
+                'processing_version': '1.0',
+                'original_path': file.path,
+                'reasoning': ocrResult.reasoning,
+                'reclassified_at': DateTime.now().toIso8601String(),
+              },
+              tags: ocrResult.tags,
+            );
+            
+            await _firestoreService.updatePhoto(updatedPhoto);
+            savedPhoto = updatedPhoto;
+            print('🔄 기존 사진 업데이트: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
+          } else {
+            // 새 사진 생성
+            final photoId = await _firestoreService.createPhoto(photoModel);
+            savedPhoto = photoModel.copyWith(id: photoId);
+            print('✅ 새 사진 생성: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
+          }
+        } else {
+          // 일반 처리: 새 사진 생성
+          final photoId = await _firestoreService.createPhoto(photoModel);
+          savedPhoto = photoModel.copyWith(id: photoId);
+          print('✅ 사진 처리 완료: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
+        }
         
         processedPhotos.add(savedPhoto);
         
         // 앨범 사진 개수 업데이트
         await _firestoreService.updateAlbumPhotoCount(savedPhoto.albumId);
         
-        print('✅ 사진 처리 완료: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
         print('📁 저장 위치: $movedFilePath');
         
       } catch (e) {

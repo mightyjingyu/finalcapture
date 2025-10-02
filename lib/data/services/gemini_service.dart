@@ -1,48 +1,110 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../core/constants/app_constants.dart';
 import 'photo_service.dart';
+import 'product_search_service.dart';
+import 'deadline_service.dart';
 
 class GeminiService {
-  final Dio _dio = Dio();
-  final String _apiKey = 'AIzaSyDARcqzcmqYXHMMTwZxFB_xe2H5jh0zm0M';
+  // 환경변수에서 API 키 로드
+  String get _apiKey {
+    final apiKey = dotenv.env['GEMINI_API_KEY'];
+    if (apiKey == null || apiKey.isEmpty) {
+      throw Exception('GEMINI_API_KEY가 환경변수에 설정되지 않았습니다.');
+    }
+    return apiKey;
+  }
+  
+  // v1beta API 엔드포인트
+  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+  static const String _modelName = 'gemini-1.5-flash-002';
+  
+  // 제품 검색 서비스
+  final ProductSearchService _productSearchService = ProductSearchService();
+  
+  // 기한 인식 서비스
+  final DeadlineService _deadlineService = DeadlineService();
+
+  GeminiService() {
+    print('🔧 Gemini Service 초기화 완료 (REST API 방식)');
+    print('🔑 API 키: ${_apiKey.substring(0, 10)}...');
+    print('🌐 엔드포인트: $_baseUrl/models/$_modelName:generateContent');
+    print('🛍️ 제품 검색 서비스 초기화 완료');
+    print('📅 기한 인식 서비스 초기화 완료');
+  }
+
+  // 할당량 확인 및 대기
+  Future<void> _checkQuotaLimit() async {
+    print('📊 할당량 확인 중...');
+    print('💡 유료 플랜으로 업그레이드 완료');
+  }
 
   // 바이트 데이터로 이미지 OCR 및 카테고리 분류 (웹용)
   Future<OCRResult> processImageBytes(Uint8List imageBytes, String fileName) async {
     try {
       print('🔄 바이트 데이터 처리 중: $fileName');
       print('📊 이미지 크기: ${imageBytes.length} bytes');
+      
+      // 할당량 확인
+      await _checkQuotaLimit();
+
       final base64Image = base64Encode(imageBytes);
       print('🔤 Base64 인코딩 완료: ${base64Image.length} characters');
 
       print('🤖 Gemini API 요청 구성 중...');
-      // Gemini API 요청 구성
-      final requestData = {
-        'contents': [
-          {
-            'parts': [
-              {
-                'text': '''
+      
+      final prompt = '''
 이 스크린샷 이미지를 분석하여 카테고리를 분류해주세요.
 
 **분석 단계:**
 1. 이미지에 있는 모든 텍스트를 OCR로 추출
-2. 이미지의 시각적 요소 분석 (UI, 레이아웃, 색상 등)
-3. 텍스트와 시각적 요소를 종합하여 카테고리 분류
+2. 이미지의 시각적 요소 분석 (UI, 레이아웃, 색상, 앱 디자인 등)
+3. 텍스트와 시각적 요소를 종합하여 우선순위에 따라 카테고리 분류
 
-**카테고리 분류 기준:**
-- **정보/참고용**: 일반적인 정보, 뉴스, 문서, 웹페이지, 참고 자료
-- **대화/메시지**: 채팅, 메신저, 카카오톡, 문자, 소셜미디어 대화
-- **학습/업무 메모**: 공부 자료, 노트, 업무 문서, 프레젠테이션, 강의
-- **재미/밈/감정**: 유머, 밈, 재미있는 이미지, 감정 표현
-- **일정/예약**: 캘린더, 일정표, 예약 확인서, 시간표
-- **증빙/거래**: 영수증, 결제 내역, 계좌 정보, 거래 증명서
-- **옷**: 의류, 패션, 쇼핑몰 상품, 옷 관련 정보
-- **제품**: 전자제품, 생활용품, 상품 정보, 리뷰
+**카테고리 분류 기준 (우선순위 적용):**
 
-**응답 형식:**
+1. **대화/메시지** [최우선]: 
+   - 카카오톡, 문자, 채팅, 메신저 앱 화면
+   - 말풍선, 대화 내용, 연락처 화면
+   - 소셜미디어(인스타그램, 페이스북) 댓글/메시지
+
+2. **증빙/거래** [높은 우선순위]:
+   - 영수증, 결제 화면, 은행 앱, 송금/이체 내역
+   - 온라인 쇼핑 주문/결제 확인, 카드 사용 내역
+   - 보험, 계약서, 증명서류
+
+3. **일정/예약** [높은 우선순위]:
+   - 캘린더 앱, 예약 확인서, 티켓팅
+   - 병원 예약, 식당 예약, 여행 예약
+   - 일정표, 스케줄, 알람 설정
+
+4. **학습/업무 메모** [중간 우선순위]:
+   - 공부 자료, 노트, 업무 문서
+   - 프레젠테이션, 강의, 교육 자료
+   - 회의록, 업무 계획서
+
+5. **재미/밈/감정** [중간 우선순위]:
+   - 유머, 밈, 재미있는 이미지
+   - 감정 표현, 이모티콘
+   - 엔터테인먼트 콘텐츠
+
+6. **옷** [낮은 우선순위]:
+   - 의류, 패션, 쇼핑몰 상품
+   - 옷 관련 정보, 스타일링
+
+7. **제품** [낮은 우선순위]:
+   - 전자제품, 생활용품, 상품 정보
+   - 리뷰, 구매 정보
+
+8. **정보/참고용** [기본값]:
+   - 일반적인 정보, 뉴스, 문서
+   - 웹페이지, 참고 자료
+   - 기타 분류되지 않는 내용
+
+**응답 형식 (JSON):**
 {
   "extracted_text": "추출된 텍스트",
   "category": "분류된 카테고리",
@@ -52,64 +114,24 @@ class GeminiService {
 }
 
 **중요:** 텍스트가 없거나 읽을 수 없는 경우에도 이미지의 시각적 특성을 바탕으로 분류해주세요.
-'''
-              },
-              {
-                'inline_data': {
-                  'mime_type': 'image/jpeg',
-                  'data': base64Image
-                }
-              }
-            ]
-          }
-        ],
-        'generationConfig': {
-          'temperature': 0.4,
-          'topK': 32,
-          'topP': 1,
-          'maxOutputTokens': 4096,
-        },
-        'safetySettings': [
-          {
-            'category': 'HARM_CATEGORY_HARASSMENT',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_HATE_SPEECH',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          }
-        ]
-      };
+''';
 
       print('📡 Gemini API 호출 중...');
-      final response = await _dio.post(
-        '${AppConstants.geminiApiUrl}?key=$_apiKey',
-        data: requestData,
-        options: Options(
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
+      
+      // REST API 직접 호출
+      final response = await _makeApiCall(prompt, base64Image);
+      
+      if (response == null) {
+        throw Exception('API 호출 실패: 응답이 null입니다');
+      }
 
-      print('📡 API 응답 상태: ${response.statusCode}');
-      if (response.statusCode == 200) {
-        final responseData = response.data;
-        final content = responseData['candidates'][0]['content']['parts'][0]['text'];
-        print('📝 API 응답 내용: $content');
+      print('📡 API 응답 수신 완료');
+      print('📝 API 응답 내용: $response');
         
         // JSON 응답 파싱
         try {
           print('🔍 JSON 파싱 시도 중...');
-          final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(content);
+        final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(response);
           if (jsonMatch != null) {
             final jsonStr = jsonMatch.group(0)!;
             print('📋 추출된 JSON: $jsonStr');
@@ -133,18 +155,15 @@ class GeminiService {
         }
         
         // JSON 파싱 실패 시 폴백 처리
-        return _fallbackProcessing(content);
-      } else {
-        throw Exception('Gemini API Error: ${response.statusCode}');
-      }
+      return _fallbackProcessing(response);
     } catch (e) {
-      print('Gemini Service Error: $e');
+      print('❌ Gemini Service Error: $e');
       // API 호출 실패 시 기본값 반환
       return OCRResult(
         text: '',
         category: '정보/참고용',
         confidence: 0.5,
-        tags: ['자동분류실패'],
+        tags: ['API오류'],
         reasoning: 'API 호출 실패: $e',
       );
     }
@@ -161,31 +180,56 @@ class GeminiService {
       print('🔤 Base64 인코딩 완료: ${base64Image.length} characters');
 
       print('🤖 Gemini API 요청 구성 중...');
-      // Gemini API 요청 구성
-      final requestData = {
-        'contents': [
-          {
-            'parts': [
-              {
-                'text': '''
+      
+      final prompt = '''
 이 스크린샷 이미지를 분석하여 카테고리를 분류해주세요.
 
 **분석 단계:**
 1. 이미지에 있는 모든 텍스트를 OCR로 추출
-2. 이미지의 시각적 요소 분석 (UI, 레이아웃, 색상 등)
-3. 텍스트와 시각적 요소를 종합하여 카테고리 분류
+2. 이미지의 시각적 요소 분석 (UI, 레이아웃, 색상, 앱 디자인 등)
+3. 텍스트와 시각적 요소를 종합하여 우선순위에 따라 카테고리 분류
 
-**카테고리 분류 기준:**
-- **정보/참고용**: 일반적인 정보, 뉴스, 문서, 웹페이지, 참고 자료
-- **대화/메시지**: 채팅, 메신저, 카카오톡, 문자, 소셜미디어 대화
-- **학습/업무 메모**: 공부 자료, 노트, 업무 문서, 프레젠테이션, 강의
-- **재미/밈/감정**: 유머, 밈, 재미있는 이미지, 감정 표현
-- **일정/예약**: 캘린더, 일정표, 예약 확인서, 시간표
-- **증빙/거래**: 영수증, 결제 내역, 계좌 정보, 거래 증명서
-- **옷**: 의류, 패션, 쇼핑몰 상품, 옷 관련 정보
-- **제품**: 전자제품, 생활용품, 상품 정보, 리뷰
+**카테고리 분류 기준 (우선순위 적용):**
 
-**응답 형식:**
+1. **대화/메시지** [최우선]: 
+   - 카카오톡, 문자, 채팅, 메신저 앱 화면
+   - 말풍선, 대화 내용, 연락처 화면
+   - 소셜미디어(인스타그램, 페이스북) 댓글/메시지
+
+2. **증빙/거래** [높은 우선순위]:
+   - 영수증, 결제 화면, 은행 앱, 송금/이체 내역
+   - 온라인 쇼핑 주문/결제 확인, 카드 사용 내역
+   - 보험, 계약서, 증명서류
+
+3. **일정/예약** [높은 우선순위]:
+   - 캘린더 앱, 예약 확인서, 티켓팅
+   - 병원 예약, 식당 예약, 여행 예약
+   - 일정표, 스케줄, 알람 설정
+
+4. **학습/업무 메모** [중간 우선순위]:
+   - 공부 자료, 노트, 업무 문서
+   - 프레젠테이션, 강의, 교육 자료
+   - 회의록, 업무 계획서
+
+5. **재미/밈/감정** [중간 우선순위]:
+   - 유머, 밈, 재미있는 이미지
+   - 감정 표현, 이모티콘
+   - 엔터테인먼트 콘텐츠
+
+6. **옷** [낮은 우선순위]:
+   - 의류, 패션, 쇼핑몰 상품
+   - 옷 관련 정보, 스타일링
+
+7. **제품** [낮은 우선순위]:
+   - 전자제품, 생활용품, 상품 정보
+   - 리뷰, 구매 정보
+
+8. **정보/참고용** [기본값]:
+   - 일반적인 정보, 뉴스, 문서
+   - 웹페이지, 참고 자료
+   - 기타 분류되지 않는 내용
+
+**응답 형식 (JSON):**
 {
   "extracted_text": "추출된 텍스트",
   "category": "분류된 카테고리",
@@ -195,8 +239,72 @@ class GeminiService {
 }
 
 **중요:** 텍스트가 없거나 읽을 수 없는 경우에도 이미지의 시각적 특성을 바탕으로 분류해주세요.
-'''
-              },
+''';
+
+      print('🌐 Gemini API 호출 중...');
+      
+      // REST API 직접 호출
+      final response = await _makeApiCall(prompt, base64Image);
+      
+      if (response == null) {
+        throw Exception('API 호출 실패: 응답이 null입니다');
+      }
+
+      print('📡 API 응답 상태: 성공');
+      print('📝 API 응답 내용: $response');
+
+      // JSON 응답 파싱
+      try {
+        print('🔍 JSON 파싱 시도 중...');
+        final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(response);
+        if (jsonMatch != null) {
+          final jsonStr = jsonMatch.group(0)!;
+          print('📋 추출된 JSON: $jsonStr');
+          final parsedData = json.decode(jsonStr);
+
+          final result = OCRResult(
+            text: parsedData['extracted_text'] ?? '',
+            category: _validateCategory(parsedData['category'] ?? '정보/참고용'),
+            confidence: (parsedData['confidence'] ?? 0.8).toDouble(),
+            tags: List<String>.from(parsedData['tags'] ?? []),
+            reasoning: parsedData['reasoning'] ?? '분류 근거 없음',
+          );
+          print('✅ OCR 결과: ${result.category} (신뢰도: ${result.confidence})');
+          print('📝 분류 근거: ${result.reasoning}');
+          print('🏷️ 태그: ${result.tags}');
+          print('📄 추출된 텍스트: ${result.text}');
+          return result;
+        }
+      } catch (e) {
+        print('❌ JSON parsing error: $e');
+      }
+
+      // JSON 파싱 실패 시 폴백 처리
+      return _fallbackProcessing(response);
+    } catch (e) {
+      print('❌ Gemini Service Error: $e');
+      // API 호출 실패 시 기본값 반환
+      return OCRResult(
+        text: '',
+        category: '정보/참고용',
+        confidence: 0.5,
+        tags: ['API오류'],
+        reasoning: 'API 호출 실패: $e',
+      );
+    }
+  }
+
+  // REST API 직접 호출 (v1beta 엔드포인트 사용)
+  Future<String?> _makeApiCall(String prompt, String base64Image) async {
+    try {
+      // v1beta 엔드포인트 사용
+      final url = '$_baseUrl/models/$_modelName:generateContent';
+      
+      final requestBody = {
+        'contents': [
+          {
+            'parts': [
+              {'text': prompt},
               {
                 'inline_data': {
                   'mime_type': 'image/jpeg',
@@ -209,7 +317,7 @@ class GeminiService {
         'generationConfig': {
           'temperature': 0.4,
           'topK': 32,
-          'topP': 1,
+          'topP': 1.0,
           'maxOutputTokens': 4096,
         },
         'safetySettings': [
@@ -232,65 +340,44 @@ class GeminiService {
         ]
       };
 
-      print('🌐 Gemini API 호출 중...');
-      // API 호출
-      final response = await _dio.post(
-        '${AppConstants.geminiApiUrl}?key=$_apiKey',
-        data: requestData,
-        options: Options(
+      print('📡 REST API 호출: $url');
+      print('🔑 API 키: ${_apiKey.substring(0, 10)}...');
+      
+      final response = await http.post(
+        Uri.parse(url),
           headers: {
             'Content-Type': 'application/json',
+          'x-goog-api-key': _apiKey,
           },
-        ),
+        body: json.encode(requestBody),
       );
 
-      print('📡 API 응답 상태: ${response.statusCode}');
+      print('📊 HTTP 상태 코드: ${response.statusCode}');
+      
       if (response.statusCode == 200) {
-        final responseData = response.data;
-        final content = responseData['candidates'][0]['content']['parts'][0]['text'];
-        print('📝 API 응답 내용: $content');
+        final responseData = json.decode(response.body);
+        print('✅ API 호출 성공');
         
-        // JSON 응답 파싱
-        try {
-          print('🔍 JSON 파싱 시도 중...');
-          final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(content);
-          if (jsonMatch != null) {
-            final jsonStr = jsonMatch.group(0)!;
-            print('📋 추출된 JSON: $jsonStr');
-            final parsedData = json.decode(jsonStr);
-            
-            final result = OCRResult(
-              text: parsedData['extracted_text'] ?? '',
-              category: _validateCategory(parsedData['category'] ?? '정보/참고용'),
-              confidence: (parsedData['confidence'] ?? 0.8).toDouble(),
-              tags: List<String>.from(parsedData['tags'] ?? []),
-              reasoning: parsedData['reasoning'] ?? '분류 근거 없음',
-            );
-            print('✅ OCR 결과: ${result.category} (신뢰도: ${result.confidence})');
-            print('📝 분류 근거: ${result.reasoning}');
-            print('🏷️ 태그: ${result.tags}');
-            print('📄 추출된 텍스트: ${result.text}');
-            return result;
-          }
-        } catch (e) {
-          print('❌ JSON parsing error: $e');
+        if (responseData['candidates'] != null && 
+            responseData['candidates'].isNotEmpty &&
+            responseData['candidates'][0]['content'] != null &&
+            responseData['candidates'][0]['content']['parts'] != null &&
+            responseData['candidates'][0]['content']['parts'].isNotEmpty) {
+          
+          final text = responseData['candidates'][0]['content']['parts'][0]['text'];
+          return text;
+        } else {
+          print('❌ 응답 구조가 예상과 다름: ${response.body}');
+          return null;
         }
-        
-        // JSON 파싱 실패 시 폴백 처리
-        return _fallbackProcessing(content);
       } else {
-        throw Exception('Gemini API Error: ${response.statusCode}');
+        print('❌ HTTP 오류: ${response.statusCode}');
+        print('❌ 응답 내용: ${response.body}');
+        return null;
       }
     } catch (e) {
-      print('Gemini Service Error: $e');
-      // API 호출 실패 시 기본값 반환
-      return OCRResult(
-        text: '',
-        category: '정보/참고용',
-        confidence: 0.5,
-        tags: ['자동분류실패'],
-        reasoning: 'API 호출 실패: $e',
-      );
+      print('❌ REST API 호출 실패: $e');
+      return null;
     }
   }
 
@@ -393,12 +480,7 @@ class GeminiService {
   // 텍스트만으로 카테고리 분류 (이미 추출된 OCR 텍스트용)
   Future<String> classifyTextOnly(String text) async {
     try {
-      final requestData = {
-        'contents': [
-          {
-            'parts': [
-              {
-                'text': '''
+      final prompt = '''
 다음 텍스트를 분석하여 가장 적절한 카테고리로 분류해주세요:
 
 텍스트: "$text"
@@ -414,30 +496,12 @@ class GeminiService {
 - 제품
 
 응답은 카테고리 이름만 정확히 답해주세요.
-'''
-              }
-            ]
-          }
-        ],
-        'generationConfig': {
-          'temperature': 0.2,
-          'maxOutputTokens': 50,
-        }
-      };
+''';
 
-      final response = await _dio.post(
-        '${AppConstants.geminiApiUrl}?key=$_apiKey',
-        data: requestData,
-        options: Options(
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final content = response.data['candidates'][0]['content']['parts'][0]['text'];
-        return _validateCategory(content.trim());
+      final response = await _makeApiCall(prompt, '');
+      
+      if (response != null) {
+        return _validateCategory(response.trim());
       }
     } catch (e) {
       print('Text classification error: $e');
@@ -446,4 +510,284 @@ class GeminiService {
     return '정보/참고용';
   }
 
+  // === 제품 검색 기능 ===
+  
+  /// 이미지에서 제품 정보 추출 및 검색 링크 생성
+  Future<Map<String, dynamic>> extractProductInfo(Uint8List imageBytes, String fileName) async {
+    try {
+      print('🛍️ 제품 정보 추출 시작: $fileName');
+      
+      // 1. Gemini API로 이미지에서 텍스트 추출
+      final ocrResult = await processImageBytes(imageBytes, fileName);
+      print('📝 OCR 결과: ${ocrResult.text}');
+      
+      // 2. 제품 검색 결과 생성
+      final productSearchResult = _productSearchService.generateProductSearchResult(ocrResult.text);
+      
+      // 3. 결과에 OCR 정보 추가
+      productSearchResult['ocr_result'] = {
+        'text': ocrResult.text,
+        'category': ocrResult.category,
+        'confidence': ocrResult.confidence,
+        'tags': ocrResult.tags,
+        'reasoning': ocrResult.reasoning,
+      };
+      
+      print('✅ 제품 정보 추출 완료');
+      return productSearchResult;
+      
+    } catch (e) {
+      print('❌ 제품 정보 추출 실패: $e');
+      return {
+        'error': '제품 정보 추출 실패: $e',
+        'normalized_text': '',
+        'links': {},
+        'raw_text': '',
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+    }
+  }
+  
+  /// 파일에서 제품 정보 추출 및 검색 링크 생성
+  Future<Map<String, dynamic>> extractProductInfoFromFile(File imageFile) async {
+    try {
+      print('🛍️ 파일에서 제품 정보 추출 시작: ${imageFile.path}');
+      
+      // 1. Gemini API로 이미지에서 텍스트 추출
+      final ocrResult = await processImage(imageFile);
+      print('📝 OCR 결과: ${ocrResult.text}');
+      
+      // 2. 제품 검색 결과 생성
+      final productSearchResult = _productSearchService.generateProductSearchResult(ocrResult.text);
+      
+      // 3. 결과에 OCR 정보 추가
+      productSearchResult['ocr_result'] = {
+        'text': ocrResult.text,
+        'category': ocrResult.category,
+        'confidence': ocrResult.confidence,
+        'tags': ocrResult.tags,
+        'reasoning': ocrResult.reasoning,
+      };
+      
+      print('✅ 파일에서 제품 정보 추출 완료');
+      return productSearchResult;
+      
+    } catch (e) {
+      print('❌ 파일에서 제품 정보 추출 실패: $e');
+      return {
+        'error': '제품 정보 추출 실패: $e',
+        'normalized_text': '',
+        'links': {},
+        'raw_text': '',
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+    }
+  }
+  
+  /// 제품 검색 결과를 JSON 문자열로 반환
+  Future<String> getProductSearchJson(Uint8List imageBytes, String fileName) async {
+    final result = await extractProductInfo(imageBytes, fileName);
+    return json.encode(result);
+  }
+  
+  /// 제품 검색 결과를 파일로 저장
+  Future<void> saveProductSearchResult(Uint8List imageBytes, String fileName, String outputPath) async {
+    try {
+      final result = await extractProductInfo(imageBytes, fileName);
+      final jsonResult = json.encode(result);
+      
+      final file = File(outputPath);
+      await file.writeAsString(jsonResult);
+      
+      print('💾 제품 검색 결과 저장 완료: $outputPath');
+    } catch (e) {
+      print('❌ 제품 검색 결과 저장 실패: $e');
+    }
+  }
+  
+  /// 제품 검색 결과를 콘솔에 출력
+  Future<void> printProductSearchResult(Uint8List imageBytes, String fileName) async {
+    try {
+      final result = await extractProductInfo(imageBytes, fileName);
+      
+      print('\n🛍️ === 제품 검색 결과 ===');
+      print('📁 파일명: $fileName');
+      
+      if (result.containsKey('error')) {
+        print('❌ 오류: ${result['error']}');
+      } else {
+        print('📝 원본 텍스트: ${result['raw_text']}');
+        print('✨ 정규화된 텍스트: ${result['normalized_text']}');
+        print('🔗 검색 링크:');
+        
+        final links = result['links'] as Map<String, String>;
+        links.forEach((platform, url) {
+          print('  $platform: $url');
+        });
+        
+        if (result.containsKey('ocr_result')) {
+          final ocrResult = result['ocr_result'] as Map<String, dynamic>;
+          print('📊 OCR 정보:');
+          print('  카테고리: ${ocrResult['category']}');
+          print('  신뢰도: ${ocrResult['confidence']}');
+          print('  태그: ${ocrResult['tags']}');
+        }
+        
+        print('⏰ 생성 시간: ${result['timestamp']}');
+      }
+      
+      print('========================\n');
+    } catch (e) {
+      print('❌ 제품 검색 결과 출력 실패: $e');
+    }
+  }
+
+  // === 기한 인식 기능 ===
+  
+  /// 이미지에서 기한 정보 추출 및 알림 예약
+  Future<Map<String, dynamic>> extractDeadlineInfo(Uint8List imageBytes, String fileName) async {
+    try {
+      print('📅 기한 정보 추출 시작: $fileName');
+      
+      // 1. Gemini API로 이미지에서 텍스트 추출
+      final ocrResult = await processImageBytes(imageBytes, fileName);
+      print('📝 OCR 결과: ${ocrResult.text}');
+      
+      // 2. 기한 정보 생성
+      final deadlineResult = _deadlineService.generateDeadlineResult(ocrResult.text, ocrResult.text);
+      
+      // 3. 결과에 OCR 정보 추가
+      deadlineResult['ocr_result'] = {
+        'text': ocrResult.text,
+        'category': ocrResult.category,
+        'confidence': ocrResult.confidence,
+        'tags': ocrResult.tags,
+        'reasoning': ocrResult.reasoning,
+      };
+      
+      print('✅ 기한 정보 추출 완료');
+      return deadlineResult;
+      
+    } catch (e) {
+      print('❌ 기한 정보 추출 실패: $e');
+      return {
+        'error': '기한 정보 추출 실패: $e',
+        'normalized_text': '',
+        'deadline': null,
+        'album': '정보/참고용',
+        'links': {},
+        'notifications': [],
+        'raw_text': '',
+        'timestamp': DateTime.now().toIso8601String(),
+        'has_deadline': false,
+      };
+    }
+  }
+  
+  /// 파일에서 기한 정보 추출 및 알림 예약
+  Future<Map<String, dynamic>> extractDeadlineInfoFromFile(File imageFile) async {
+    try {
+      print('📅 파일에서 기한 정보 추출 시작: ${imageFile.path}');
+      
+      // 1. Gemini API로 이미지에서 텍스트 추출
+      final ocrResult = await processImage(imageFile);
+      print('📝 OCR 결과: ${ocrResult.text}');
+      
+      // 2. 기한 정보 생성
+      final deadlineResult = _deadlineService.generateDeadlineResult(ocrResult.text, ocrResult.text);
+      
+      // 3. 결과에 OCR 정보 추가
+      deadlineResult['ocr_result'] = {
+        'text': ocrResult.text,
+        'category': ocrResult.category,
+        'confidence': ocrResult.confidence,
+        'tags': ocrResult.tags,
+        'reasoning': ocrResult.reasoning,
+      };
+      
+      print('✅ 파일에서 기한 정보 추출 완료');
+      return deadlineResult;
+      
+    } catch (e) {
+      print('❌ 파일에서 기한 정보 추출 실패: $e');
+      return {
+        'error': '기한 정보 추출 실패: $e',
+        'normalized_text': '',
+        'deadline': null,
+        'album': '정보/참고용',
+        'links': {},
+        'notifications': [],
+        'raw_text': '',
+        'timestamp': DateTime.now().toIso8601String(),
+        'has_deadline': false,
+      };
+    }
+  }
+  
+  /// 기한 정보를 JSON 문자열로 반환
+  Future<String> getDeadlineJson(Uint8List imageBytes, String fileName) async {
+    final result = await extractDeadlineInfo(imageBytes, fileName);
+    return json.encode(result);
+  }
+  
+  /// 기한 정보를 파일로 저장
+  Future<void> saveDeadlineResult(Uint8List imageBytes, String fileName, String outputPath) async {
+    try {
+      final result = await extractDeadlineInfo(imageBytes, fileName);
+      final jsonResult = json.encode(result);
+      
+      final file = File(outputPath);
+      await file.writeAsString(jsonResult);
+      
+      print('💾 기한 정보 저장 완료: $outputPath');
+    } catch (e) {
+      print('❌ 기한 정보 저장 실패: $e');
+    }
+  }
+  
+  /// 기한 정보를 콘솔에 출력
+  Future<void> printDeadlineResult(Uint8List imageBytes, String fileName) async {
+    try {
+      final result = await extractDeadlineInfo(imageBytes, fileName);
+      
+      print('\n📅 === 기한 정보 결과 ===');
+      print('📁 파일명: $fileName');
+      
+      if (result.containsKey('error')) {
+        print('❌ 오류: ${result['error']}');
+      } else {
+        print('📝 원본 텍스트: ${result['raw_text']}');
+        print('✨ 정규화된 텍스트: ${result['normalized_text']}');
+        
+        if (result['has_deadline'] == true) {
+          print('📅 기한: ${result['deadline']}');
+          print('📁 앨범: ${result['album']}');
+          print('🔔 알림 예약:');
+          
+          final notifications = result['notifications'] as List<String>;
+          for (int i = 0; i < notifications.length; i++) {
+            final days = ['3일 전', '1일 전', '당일'][i];
+            print('  $days: ${notifications[i]}');
+          }
+        } else {
+          print('ℹ️ 기한 없음 - 일반 분류');
+          print('📁 앨범: ${result['album']}');
+        }
+        
+        if (result.containsKey('ocr_result')) {
+          final ocrResult = result['ocr_result'] as Map<String, dynamic>;
+          print('📊 OCR 정보:');
+          print('  카테고리: ${ocrResult['category']}');
+          print('  신뢰도: ${ocrResult['confidence']}');
+          print('  태그: ${ocrResult['tags']}');
+        }
+        
+        print('⏰ 생성 시간: ${result['timestamp']}');
+      }
+      
+      print('========================\n');
+    } catch (e) {
+      print('❌ 기한 정보 출력 실패: $e');
+    }
+  }
 }

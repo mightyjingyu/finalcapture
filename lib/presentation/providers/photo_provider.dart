@@ -513,6 +513,46 @@ class PhotoProvider extends ChangeNotifier {
     _clearError();
   }
 
+  // 수동 분류 시작 (이미 분류된 사진도 재분류)
+  Future<void> startClassification(String userId) async {
+    try {
+      _setProcessing(true);
+      _clearError();
+      
+      print('🤖 수동 분류 시작...');
+      
+      // 0. 기본 앨범들 생성 (없는 경우에만)
+      await createDefaultAlbums(userId);
+      
+      // 1. 최신 스크린샷 로드 (갤러리에서 직접 가져오기)
+      await loadLatestScreenshots();
+      
+      // 2. 모든 스크린샷 처리 (OCR 및 분류) - 이미 분류된 것도 재분류
+      print('📸 모든 스크린샷 분류 시작...');
+      final processedPhotos = await _photoService.processNewScreenshots(userId, forceReprocess: true);
+      
+      if (processedPhotos.isNotEmpty) {
+        print('✅ ${processedPhotos.length}개 스크린샷 분류 완료');
+      } else {
+        print('ℹ️ 분류할 스크린샷이 없습니다');
+      }
+      
+      // 3. 사용자 사진 목록 새로고침 (Firestore에서)
+      await loadUserPhotos(userId);
+      
+      // 4. 즐겨찾기 사진 목록 새로고침
+      await loadFavoritePhotos(userId);
+      
+      print('✅ 수동 분류 완료');
+      
+    } catch (e) {
+      _errorMessage = '분류 실패: $e';
+      print('❌ 분류 오류: $e');
+    } finally {
+      _setProcessing(false);
+    }
+  }
+
   // 앱 시작 시 초기화
   Future<void> initialize(String userId) async {
     await checkPermissions();

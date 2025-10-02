@@ -58,6 +58,21 @@ class PhotoModel extends Equatable {
     );
   }
 
+  factory PhotoModel.empty() {
+    final now = DateTime.now();
+    return PhotoModel(
+      id: '',
+      localPath: '',
+      fileName: '',
+      captureDate: now,
+      createdAt: now,
+      updatedAt: now,
+      userId: '',
+      albumId: '',
+      category: '',
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
