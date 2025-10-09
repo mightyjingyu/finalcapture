@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../providers/photo_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -179,6 +180,15 @@ class CategoryPhotosScreen extends StatelessWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 12),
+              if (photo.metadata?['product_search'] != null) ...[
+                const Text(
+                  '제품 링크:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                _ProductLinksView(photo.metadata!['product_search']['links'] as Map<String, dynamic>?),
+              ],
             ],
           ),
         ),
@@ -299,5 +309,67 @@ class CategoryPhotosScreen extends StatelessWidget {
         ),
       );
     }
+  }
+}
+// 제품 링크 뷰
+class _ProductLinksView extends StatelessWidget {
+  final Map<String, dynamic>? links;
+  const _ProductLinksView(this.links);
+
+  @override
+  Widget build(BuildContext context) {
+    if (links == null || links!.isEmpty) {
+      return const Text('생성된 링크가 없습니다.', style: TextStyle(color: AppColors.textSecondary));
+    }
+    final entries = links!.entries.toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final e in entries) _LinkTile(platform: e.key, url: e.value?.toString() ?? ''),
+      ],
+    );
+  }
+}
+
+class _LinkTile extends StatelessWidget {
+  final String platform;
+  final String url;
+  const _LinkTile({required this.platform, required this.url});
+
+  Future<void> _open() async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.link, size: 18, color: AppColors.textSecondary),
+        title: Text(
+          platform,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          url,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          softWrap: true,
+          overflow: TextOverflow.visible,
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.open_in_new, size: 18),
+          onPressed: _open,
+          tooltip: '열기',
+        ),
+        onTap: _open,
+      ),
+    );
   }
 }

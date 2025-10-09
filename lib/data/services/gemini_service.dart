@@ -2,25 +2,26 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../core/constants/app_constants.dart';
 import 'photo_service.dart';
 import 'product_search_service.dart';
 import 'deadline_service.dart';
 
 class GeminiService {
-  // 환경변수에서 API 키 로드
+  // API 키 (하드코딩 방식 - 테스트용)
   String get _apiKey {
-    final apiKey = dotenv.env['GEMINI_API_KEY'];
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('GEMINI_API_KEY가 환경변수에 설정되지 않았습니다.');
+    // 실제 Google AI Studio API 키 사용
+    const apiKey = 'AIzaSyDARcqzcmqYXHMMTwZxFB_xe2H5jh0zm0M';
+    
+    if (apiKey.isEmpty) {
+      throw Exception('GEMINI_API_KEY가 설정되지 않았습니다.');
     }
     return apiKey;
   }
   
-  // v1beta API 엔드포인트
-  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
-  static const String _modelName = 'gemini-1.5-flash-002';
+  // v1 API 엔드포인트 (검증된 모델명 사용)
+  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1';
+  static const String _modelName = 'gemini-2.5-flash';
   
   // 제품 검색 서비스
   final ProductSearchService _productSearchService = ProductSearchService();
@@ -300,18 +301,22 @@ class GeminiService {
       // v1beta 엔드포인트 사용
       final url = '$_baseUrl/models/$_modelName:generateContent';
       
+      final List<Map<String, dynamic>> parts = [
+        {'text': prompt},
+      ];
+      if (base64Image.isNotEmpty) {
+        parts.add({
+                'inline_data': {
+                  'mime_type': 'image/jpeg',
+            'data': base64Image,
+          }
+        });
+      }
+
       final requestBody = {
         'contents': [
           {
-            'parts': [
-              {'text': prompt},
-              {
-                'inline_data': {
-                  'mime_type': 'image/jpeg',
-                  'data': base64Image
-                }
-              }
-            ]
+            'parts': parts
           }
         ],
         'generationConfig': {
@@ -341,7 +346,10 @@ class GeminiService {
       };
 
       print('📡 REST API 호출: $url');
-      print('🔑 API 키: ${_apiKey.substring(0, 10)}...');
+      print('🔑 API 키 길이: ${_apiKey.length}');
+      print('🔑 API 키 시작: ${_apiKey.substring(0, 10)}...');
+      print('📊 요청 본문 크기: ${json.encode(requestBody).length} bytes');
+      print('🖼️ 이미지 데이터 크기: ${base64Image.length} characters');
       
       final response = await http.post(
         Uri.parse(url),
@@ -353,10 +361,12 @@ class GeminiService {
       );
 
       print('📊 HTTP 상태 코드: ${response.statusCode}');
+      print('📊 응답 헤더: ${response.headers}');
       
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
         print('✅ API 호출 성공');
+        print('📊 응답 데이터 구조: ${responseData.keys.toList()}');
         
         if (responseData['candidates'] != null && 
             responseData['candidates'].isNotEmpty &&
@@ -372,11 +382,23 @@ class GeminiService {
         }
       } else {
         print('❌ HTTP 오류: ${response.statusCode}');
+        print('❌ 응답 헤더: ${response.headers}');
         print('❌ 응답 내용: ${response.body}');
+        
+        // 404 오류의 경우 더 자세한 정보 출력
+        if (response.statusCode == 404) {
+          print('🔍 404 오류 분석:');
+          print('  - 요청 URL: $url');
+          print('  - 모델명: $_modelName');
+          print('  - 베이스 URL: $_baseUrl');
+          print('  - 전체 경로: $_baseUrl/models/$_modelName:generateContent');
+        }
+        
         return null;
       }
     } catch (e) {
       print('❌ REST API 호출 실패: $e');
+      print('❌ 스택 트레이스: ${StackTrace.current}');
       return null;
     }
   }

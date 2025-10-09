@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/photo_model.dart';
 import '../models/album_model.dart';
 import '../../core/constants/app_constants.dart';
+import '../models/reminder_model.dart';
 import 'firestore_service.dart';
 import 'gemini_service.dart';
 
@@ -256,6 +257,19 @@ class PhotoService {
         // OCR 및 카테고리 분류 수행
         final ocrResult = await _geminiService.processImage(file);
         
+        // (제품/옷) 카테고리인 경우: 제품 정보 추출 및 검색 링크 생성
+        Map<String, dynamic>? productSearch;
+        if (ocrResult.category == '제품' || ocrResult.category == '옷') {
+          try {
+            print('🛍️ 제품 검색 트리거: 카테고리=${ocrResult.category}');
+            productSearch = await _geminiService.extractProductInfoFromFile(file);
+            final linkCount = (productSearch['links'] is Map) ? (productSearch['links'] as Map).length : 0;
+            print('🛍️ 제품 검색 완료: 링크 ${linkCount}개');
+          } catch (e) {
+            print('❌ 제품 검색 실패: $e');
+          }
+        }
+        
         // 카테고리별 폴더로 파일 이동
         final movedFilePath = await _moveFileToCategoryFolder(file, ocrResult.category, userId);
         
@@ -276,6 +290,7 @@ class PhotoService {
             'processing_version': '1.0',
             'original_path': file.path,
             'reasoning': ocrResult.reasoning,
+            if (productSearch != null) 'product_search': productSearch,
           },
           tags: ocrResult.tags,
           assetEntityId: screenshot.id, // AssetEntity ID 추가
@@ -333,6 +348,47 @@ class PhotoService {
         await _firestoreService.updateAlbumPhotoCount(savedPhoto.albumId);
         
         print('📁 저장 위치: $movedFilePath');
+
+        // === 기한 정보 추출 및 알림 생성 ===
+        try {
+          final deadlineResult = await _geminiService.extractDeadlineInfoFromFile(file);
+          if (deadlineResult['has_deadline'] == true &&
+              deadlineResult['notifications'] is List) {
+            final List notifications = deadlineResult['notifications'];
+            print('🔔 기한 알림 생성 시작: ${notifications.length}개');
+            for (final n in notifications) {
+              try {
+                final reminderDate = DateTime.parse(n as String);
+                final reminder = ReminderModel(
+                  id: '',
+                  photoId: savedPhoto.id,
+                  userId: userId,
+                  title: '기한 알림: ${deadlineResult['deadline']}',
+                  description: '스크린샷 기반 자동 생성 알림',
+                  reminderDate: reminderDate,
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                  isCompleted: false,
+                  isNotified: false,
+                  type: ReminderType.deadline,
+                  metadata: {
+                    'photoFileName': savedPhoto.fileName,
+                    'album': deadlineResult['album'],
+                    'deadline': deadlineResult['deadline'],
+                  },
+                );
+                final reminderId = await _firestoreService.createReminder(reminder);
+                print('🔔 알림 생성 완료: $reminderId @ ${reminder.reminderDate.toIso8601String()}');
+              } catch (e) {
+                print('⚠️ 알림 생성 실패: $e');
+              }
+            }
+          } else {
+            print('ℹ️ 기한 정보 없음 또는 알림 0개');
+          }
+        } catch (e) {
+          print('❌ 기한 정보 처리 실패: $e');
+        }
         
       } catch (e) {
         print('Error processing screenshot: $e');

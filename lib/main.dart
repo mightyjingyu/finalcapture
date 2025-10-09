@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/constants/app_colors.dart';
 import 'core/constants/app_constants.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -12,15 +11,6 @@ import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 환경변수 로드
-  try {
-    await dotenv.load(fileName: ".env");
-    print('✅ 환경변수 로드 성공');
-  } catch (e) {
-    print('⚠️ 환경변수 로드 실패: $e');
-    print('💡 .env 파일을 생성하고 GEMINI_API_KEY를 설정하세요.');
-  }
   
   try {
     await Firebase.initializeApp(

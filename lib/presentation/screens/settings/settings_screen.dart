@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:kimchi_jjim/data/services/photo_service.dart';
+import 'package:kimchi_jjim/data/services/gemini_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../providers/auth_provider.dart';
@@ -218,6 +220,41 @@ class SettingsScreen extends StatelessWidget {
               ),
               
               const SizedBox(height: 24),
+
+              // 개발자 도구 (디버그)
+              const Text(
+                '개발자 도구',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.search),
+                      title: const Text('제품 검색 테스트 (최근 스크린샷)'),
+                      subtitle: const Text('Gemini + 제품 링크 생성 로그 출력'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _testProductSearch(context),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.event),
+                      title: const Text('기한 인식 테스트 (최근 스크린샷)'),
+                      subtitle: const Text('기한 추출 및 알림 계산 로그 출력'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _testDeadlineExtraction(context),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
               
               // 계정 관리
               const Text(
@@ -386,5 +423,63 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _testProductSearch(BuildContext context) async {
+    try {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(const SnackBar(content: Text('제품 검색 테스트 시작...')));
+
+      final photoService = PhotoService();
+      final screenshots = await photoService.getLatestScreenshots(count: 1);
+      if (screenshots.isEmpty) {
+        messenger.showSnackBar(const SnackBar(content: Text('최근 스크린샷을 찾지 못했습니다.')));
+        return;
+      }
+
+      final file = await screenshots.first.file;
+      if (file == null) {
+        messenger.showSnackBar(const SnackBar(content: Text('파일을 열 수 없습니다.')));
+        return;
+      }
+
+      final gemini = GeminiService();
+      final result = await gemini.extractProductInfoFromFile(file);
+
+      final hasError = result['error'] != null;
+      final links = (result['links'] is Map) ? (result['links'] as Map).length : 0;
+      messenger.showSnackBar(SnackBar(content: Text(hasError ? '제품 검색 실패' : '제품 검색 완료: 링크 $links개')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('오류: $e')));
+    }
+  }
+
+  Future<void> _testDeadlineExtraction(BuildContext context) async {
+    try {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(const SnackBar(content: Text('기한 인식 테스트 시작...')));
+
+      final photoService = PhotoService();
+      final screenshots = await photoService.getLatestScreenshots(count: 1);
+      if (screenshots.isEmpty) {
+        messenger.showSnackBar(const SnackBar(content: Text('최근 스크린샷을 찾지 못했습니다.')));
+        return;
+      }
+
+      final file = await screenshots.first.file;
+      if (file == null) {
+        messenger.showSnackBar(const SnackBar(content: Text('파일을 열 수 없습니다.')));
+        return;
+      }
+
+      final gemini = GeminiService();
+      final result = await gemini.extractDeadlineInfoFromFile(file);
+
+      final hasError = result['error'] != null;
+      final hasDeadline = result['has_deadline'] == true;
+      messenger.showSnackBar(SnackBar(content: Text(hasError ? '기한 인식 실패' : (hasDeadline ? '기한 감지됨' : '기한 없음'))));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('오류: $e')));
+    }
   }
 }
