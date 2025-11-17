@@ -3,20 +3,16 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../../core/constants/app_constants.dart';
+import '../../core/constants/secrets.dart';
 import 'photo_service.dart';
 import 'product_search_service.dart';
 import 'deadline_service.dart';
 
 class GeminiService {
-  // API 키 (하드코딩 방식 - 테스트용)
-  String get _apiKey {
-    // 실제 Google AI Studio API 키 사용
-    const apiKey = 'AIzaSyDARcqzcmqYXHMMTwZxFB_xe2H5jh0zm0M';
-    
-    if (apiKey.isEmpty) {
+  void _ensureApiKey() {
+    if (geminiApiKey.isEmpty) {
       throw Exception('GEMINI_API_KEY가 설정되지 않았습니다.');
     }
-    return apiKey;
   }
   
   // v1 API 엔드포인트 (검증된 모델명 사용)
@@ -31,7 +27,6 @@ class GeminiService {
 
   GeminiService() {
     print('🔧 Gemini Service 초기화 완료 (REST API 방식)');
-    print('🔑 API 키: ${_apiKey.substring(0, 10)}...');
     print('🌐 엔드포인트: $_baseUrl/models/$_modelName:generateContent');
     print('🛍️ 제품 검색 서비스 초기화 완료');
     print('📅 기한 인식 서비스 초기화 완료');
@@ -346,16 +341,15 @@ class GeminiService {
       };
 
       print('📡 REST API 호출: $url');
-      print('🔑 API 키 길이: ${_apiKey.length}');
-      print('🔑 API 키 시작: ${_apiKey.substring(0, 10)}...');
       print('📊 요청 본문 크기: ${json.encode(requestBody).length} bytes');
       print('🖼️ 이미지 데이터 크기: ${base64Image.length} characters');
       
+      _ensureApiKey();
       final response = await http.post(
         Uri.parse(url),
           headers: {
             'Content-Type': 'application/json',
-          'x-goog-api-key': _apiKey,
+          'x-goog-api-key': geminiApiKey,
           },
         body: json.encode(requestBody),
       );
