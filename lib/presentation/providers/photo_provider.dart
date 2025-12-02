@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart' if (dart.library.html) '';
-import 'package:path/path.dart' as path;
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 import '../../data/models/photo_model.dart';
 import '../../data/models/album_model.dart';
@@ -125,16 +122,6 @@ class PhotoProvider extends ChangeNotifier {
   // 갤러리 변화 감지 중지 (현재 비활성화)
   void stopGalleryChangeListener() {
     // 현재 비활성화됨
-  }
-
-  // 갤러리 변화 처리 (현재 비활성화)
-  Future<void> _handleGalleryChange() async {
-    // 현재 비활성화됨 - photo_manager API 호환성 문제
-  }
-
-  // 삭제된 사진들을 Firestore에서 제거 (현재 비활성화)
-  Future<void> _removeDeletedPhotosFromFirestore(Set<String> deletedAssetIds) async {
-    // 현재 비활성화됨 - photo_manager API 호환성 문제
   }
 
   // 웹에서 사진 선택 및 처리

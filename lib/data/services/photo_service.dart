@@ -181,7 +181,6 @@ class PhotoService {
         for (final asset in allAssets) {
           final fileName = asset.title ?? '';
           final filePath = asset.relativePath ?? '';
-          final assetId = asset.id;
           
           // 스크린샷 파일명 패턴 확인
           if (fileName.toLowerCase().contains('screenshot') ||

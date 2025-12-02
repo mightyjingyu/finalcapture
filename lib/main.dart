@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/constants/app_colors.dart';
 import 'core/constants/app_constants.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -11,6 +12,22 @@ import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // .env 파일 로드
+  try {
+    await dotenv.load(fileName: ".env");
+    final apiKey = dotenv.env['GEMINI_API_KEY'];
+    if (apiKey != null && apiKey.isNotEmpty) {
+      print('✅ .env 파일 로드 성공');
+      print('🔑 API 키 확인: ${apiKey.substring(0, apiKey.length > 10 ? 10 : apiKey.length)}...');
+    } else {
+      print('⚠️ .env 파일은 로드되었지만 GEMINI_API_KEY가 비어있습니다.');
+      print('💡 .env 파일에 GEMINI_API_KEY=your_api_key_here 형식으로 추가해주세요.');
+    }
+  } catch (e) {
+    print('⚠️ .env 파일 로드 실패: $e');
+    print('💡 .env 파일을 생성하고 GEMINI_API_KEY를 설정하세요.');
+  }
   
   try {
     await Firebase.initializeApp(

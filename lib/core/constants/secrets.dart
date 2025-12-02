@@ -1,2 +1,4 @@
-const String geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+String get geminiApiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
 

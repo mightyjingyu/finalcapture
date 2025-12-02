@@ -11,13 +11,15 @@ import 'deadline_service.dart';
 class GeminiService {
   void _ensureApiKey() {
     if (geminiApiKey.isEmpty) {
-      throw Exception('GEMINI_API_KEY가 설정되지 않았습니다.');
+      print('❌ API 키가 비어있습니다. .env 파일에 GEMINI_API_KEY를 설정해주세요.');
+      throw Exception('GEMINI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.');
     }
+    print('✅ API 키 확인 완료');
   }
   
   // v1 API 엔드포인트 (검증된 모델명 사용)
   static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1';
-  static const String _modelName = 'gemini-2.5-flash';
+  static const String _modelName = 'gemini-1.5-flash';
   
   // 제품 검색 서비스
   final ProductSearchService _productSearchService = ProductSearchService();
@@ -290,19 +292,23 @@ class GeminiService {
     }
   }
 
-  // REST API 직접 호출 (v1beta 엔드포인트 사용)
+  // REST API 직접 호출 (v1 엔드포인트 사용)
   Future<String?> _makeApiCall(String prompt, String base64Image) async {
     try {
-      // v1beta 엔드포인트 사용
-      final url = '$_baseUrl/models/$_modelName:generateContent';
+      _ensureApiKey();
+      
+      // API 키를 URL 쿼리 파라미터로 전달
+      final url = Uri.parse('$_baseUrl/models/$_modelName:generateContent?key=$geminiApiKey');
+      
+      print('🔑 API 키 확인: ${geminiApiKey.isNotEmpty ? "설정됨 (${geminiApiKey.substring(0, 10)}...)" : "없음"}');
       
       final List<Map<String, dynamic>> parts = [
         {'text': prompt},
       ];
       if (base64Image.isNotEmpty) {
         parts.add({
-                'inline_data': {
-                  'mime_type': 'image/jpeg',
+          'inline_data': {
+            'mime_type': 'image/jpeg',
             'data': base64Image,
           }
         });
@@ -340,27 +346,32 @@ class GeminiService {
         ]
       };
 
-      print('📡 REST API 호출: $url');
+      print('📡 REST API 호출: ${url.toString().replaceAll(geminiApiKey, '***')}');
       print('📊 요청 본문 크기: ${json.encode(requestBody).length} bytes');
       print('🖼️ 이미지 데이터 크기: ${base64Image.length} characters');
       
-      _ensureApiKey();
       final response = await http.post(
-        Uri.parse(url),
-          headers: {
-            'Content-Type': 'application/json',
-          'x-goog-api-key': geminiApiKey,
-          },
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: json.encode(requestBody),
       );
 
       print('📊 HTTP 상태 코드: ${response.statusCode}');
-      print('📊 응답 헤더: ${response.headers}');
       
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
         print('✅ API 호출 성공');
         print('📊 응답 데이터 구조: ${responseData.keys.toList()}');
+        
+        // 에러 체크
+        if (responseData['error'] != null) {
+          final error = responseData['error'];
+          print('❌ API 에러 응답: ${error['message']}');
+          print('❌ 에러 코드: ${error['code']}');
+          return null;
+        }
         
         if (responseData['candidates'] != null && 
             responseData['candidates'].isNotEmpty &&
@@ -371,21 +382,38 @@ class GeminiService {
           final text = responseData['candidates'][0]['content']['parts'][0]['text'];
           return text;
         } else {
-          print('❌ 응답 구조가 예상과 다름: ${response.body}');
+          print('❌ 응답 구조가 예상과 다름');
+          print('❌ 응답 내용: ${response.body.substring(0, response.body.length > 500 ? 500 : response.body.length)}');
           return null;
         }
       } else {
         print('❌ HTTP 오류: ${response.statusCode}');
-        print('❌ 응답 헤더: ${response.headers}');
-        print('❌ 응답 내용: ${response.body}');
         
-        // 404 오류의 경우 더 자세한 정보 출력
-        if (response.statusCode == 404) {
-          print('🔍 404 오류 분석:');
-          print('  - 요청 URL: $url');
-          print('  - 모델명: $_modelName');
-          print('  - 베이스 URL: $_baseUrl');
-          print('  - 전체 경로: $_baseUrl/models/$_modelName:generateContent');
+        // 응답 본문 파싱 시도
+        try {
+          final errorData = json.decode(response.body);
+          if (errorData['error'] != null) {
+            final error = errorData['error'];
+            print('❌ API 에러: ${error['message'] ?? '알 수 없는 오류'}');
+            print('❌ 에러 코드: ${error['code'] ?? response.statusCode}');
+            print('❌ 에러 상태: ${error['status'] ?? 'N/A'}');
+            
+            // API 키 관련 오류
+            if (response.statusCode == 403 || response.statusCode == 401) {
+              print('🔑 API 키 문제일 수 있습니다. .env 파일의 GEMINI_API_KEY를 확인해주세요.');
+            }
+            
+            // 모델명 오류
+            if (response.statusCode == 404) {
+              print('🔍 모델명 오류 가능성: $_modelName');
+              print('💡 사용 가능한 모델: gemini-1.5-flash, gemini-1.5-pro');
+            }
+          } else {
+            print('❌ 응답 내용: ${response.body.substring(0, response.body.length > 500 ? 500 : response.body.length)}');
+          }
+        } catch (e) {
+          print('❌ 응답 파싱 실패: $e');
+          print('❌ 원본 응답: ${response.body.substring(0, response.body.length > 500 ? 500 : response.body.length)}');
         }
         
         return null;

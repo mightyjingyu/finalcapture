@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -8,7 +7,6 @@ import '../../../core/constants/app_constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/album_provider.dart';
 import '../../providers/photo_provider.dart';
-import '../../../data/models/photo_model.dart';
 import '../../widgets/album_grid.dart';
 import '../../widgets/permission_dialog.dart';
 import '../notifications/notifications_screen.dart';
@@ -541,52 +539,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         );
       }
     }
-  }
-
-
-  Widget _buildPhotoTile(PhotoModel photo) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppConstants.cardBorderRadius),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 모바일: 로컬 파일 경로 표시, 웹: 네트워크/블롭 경로 표시
-          if (!kIsWeb)
-            Image.file(
-              File(photo.localPath),
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _placeholder();
-              },
-            )
-          else
-            Image.network(
-              photo.localPath,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _placeholder();
-              },
-            ),
-          // 상단 우측 작은 즐겨찾기 아이콘 표시
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.black45,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                photo.isFavorite ? Icons.favorite : Icons.favorite_border,
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _placeholder() {
