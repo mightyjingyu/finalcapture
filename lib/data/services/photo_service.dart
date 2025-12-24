@@ -9,38 +9,36 @@ import '../models/photo_model.dart';
 import '../models/album_model.dart';
 import '../../core/constants/app_constants.dart';
 import '../models/reminder_model.dart';
+import '../models/ocr_result.dart';
 import 'firestore_service.dart';
 import 'gemini_service.dart';
+import 'interfaces/i_photo_service.dart';
 
-class PhotoService {
+class FirebasePhotoService implements IPhotoService {
+  // Use FirebaseFirestoreService (will be renamed shortly)
   final FirestoreService _firestoreService = FirestoreService();
   final GeminiService _geminiService = GeminiService();
 
-  // 권한 요청
+  @override
   Future<bool> requestPermissions() async {
     if (kIsWeb) {
-      // 웹에서는 항상 true 반환 (브라우저에서 파일 선택 시 권한 요청)
       return true;
     }
     
     try {
       print('🔐 권한 요청 시작...');
       
-      // iOS/Android 갤러리 접근 권한 (PhotoManager 우선 사용)
       final photoPermission = await PhotoManager.requestPermissionExtend();
       print('📸 PhotoManager 권한 요청 결과: ${photoPermission.isAuth}');
       
-      // PhotoManager가 성공하면 그것을 사용
       if (photoPermission.isAuth) {
         print('✅ PhotoManager 권한으로 충분합니다.');
         return true;
       }
       
-      // PhotoManager가 실패한 경우에만 Permission Handler 사용
       final photosPermission = await Permission.photos.request();
       print('📷 Permission.photos 요청 결과: $photosPermission');
       
-      // 권한이 영구적으로 거부된 경우 사용자에게 설정으로 안내
       if (photosPermission == PermissionStatus.permanentlyDenied) {
         print('⚠️ 권한이 영구적으로 거부되었습니다. 설정에서 수동으로 허용해야 합니다.');
         return false;
@@ -58,17 +56,15 @@ class PhotoService {
     }
   }
 
-  // 권한 상태 확인
+  @override
   Future<bool> hasPermissions() async {
     if (kIsWeb) {
-      // 웹에서는 항상 true 반환
       return true;
     }
     
     try {
       print('🔐 권한 상태 확인 중...');
       
-      // PhotoManager 권한 상태 확인 (우선 사용)
       final photoPermission = await PhotoManager.requestPermissionExtend();
       print('📸 PhotoManager 권한 상태: ${photoPermission.isAuth}');
       
@@ -77,7 +73,6 @@ class PhotoService {
         return true;
       }
       
-      // PhotoManager가 실패한 경우에만 Permission Handler 확인
       final permissionStatus = await Permission.photos.status;
       print('📷 Permission.photos 상태: $permissionStatus');
       
@@ -93,7 +88,7 @@ class PhotoService {
     }
   }
 
-  // 웹에서 사진 선택하기
+  @override
   Future<List<XFile>> pickImagesFromWeb() async {
     if (!kIsWeb) {
       throw Exception('이 메서드는 웹에서만 사용할 수 있습니다.');
@@ -115,10 +110,9 @@ class PhotoService {
     return images;
   }
 
-  // 최신 스크린샷 가져오기 (실제로는 모든 최신 사진을 가져옴)
+  @override
   Future<List<AssetEntity>> getLatestScreenshots({int count = 50}) async {
     if (kIsWeb) {
-      // 웹에서는 빈 리스트 반환 (photo_manager가 웹에서 지원되지 않음)
       return [];
     }
     
@@ -131,7 +125,6 @@ class PhotoService {
     print('📸 갤러리 접근 권한 확인 완료');
 
     try {
-      // 모든 앨범 가져오기
       final allAlbums = await PhotoManager.getAssetPathList(
         type: RequestType.image,
         hasAll: false,
@@ -139,7 +132,6 @@ class PhotoService {
       
       print('📁 전체 앨범 수: ${allAlbums.length}');
       
-      // 스크린샷 앨범 우선 찾기
       AssetPathEntity? screenshotAlbum;
       for (final album in allAlbums) {
         final albumName = album.name.toLowerCase();
@@ -163,7 +155,6 @@ class PhotoService {
         return screenshotAssets;
       }
       
-      // 스크린샷 앨범이 없는 경우, 전체 사진에서 스크린샷만 필터링
       print('⚠️ 스크린샷 앨범을 찾을 수 없어 전체 사진에서 스크린샷을 필터링합니다.');
       final allPhotos = await PhotoManager.getAssetPathList(
         type: RequestType.image,
@@ -173,16 +164,14 @@ class PhotoService {
       if (allPhotos.isNotEmpty) {
         final allAssets = await allPhotos.first.getAssetListRange(
           start: 0,
-          end: count * 3, // 더 많이 가져와서 필터링
+          end: count * 3,
         );
         
-        // 스크린샷만 필터링 (파일명, 경로, 메타데이터 기반)
         final screenshots = <AssetEntity>[];
         for (final asset in allAssets) {
           final fileName = asset.title ?? '';
           final filePath = asset.relativePath ?? '';
           
-          // 스크린샷 파일명 패턴 확인
           if (fileName.toLowerCase().contains('screenshot') ||
               fileName.toLowerCase().contains('스크린샷') ||
               fileName.toLowerCase().contains('screen') ||
@@ -209,16 +198,15 @@ class PhotoService {
     }
   }
 
-  // 새로운 스크린샷 감지 및 처리
+  @override
   Future<List<PhotoModel>> processNewScreenshots(String userId, {bool forceReprocess = false}) async {
     final screenshots = await getLatestScreenshots();
     final processedPhotos = <PhotoModel>[];
 
     Set<String> existingAssetIds = {};
-    Set<String> processedInThisRun = {}; // 이번 실행에서 처리된 ID 추적
+    Set<String> processedInThisRun = {};
     
     if (!forceReprocess) {
-      // 기존에 처리된 사진들 가져오기 (최근 100개)
       final existingPhotos = await _firestoreService.getUserPhotos(userId, limit: 100);
       existingAssetIds = existingPhotos
           .where((p) => p.assetEntityId != null)
@@ -236,27 +224,22 @@ class PhotoService {
         final file = await screenshot.file;
         if (file == null) continue;
 
-        // 이번 실행에서 이미 처리된 사진인지 확인
         if (processedInThisRun.contains(screenshot.id)) {
           print('⏭️ 이번 실행에서 이미 처리된 스크린샷 건너뛰기: ${screenshot.id}');
           continue;
         }
 
-        // 강제 재처리가 아닌 경우에만 이미 처리된 사진인지 확인
         if (!forceReprocess && existingAssetIds.contains(screenshot.id)) {
           print('⏭️ 이미 처리된 스크린샷 건너뛰기: ${screenshot.id}');
           continue;
         }
 
-        // 이번 실행에서 처리 중인 ID로 추가
         processedInThisRun.add(screenshot.id);
 
         print('🔄 새 스크린샷 처리 시작: ${screenshot.id}');
 
-        // OCR 및 카테고리 분류 수행
         final ocrResult = await _geminiService.processImage(file);
         
-        // (제품/옷) 카테고리인 경우: 제품 정보 추출 및 검색 링크 생성
         Map<String, dynamic>? productSearch;
         if (ocrResult.category == '제품' || ocrResult.category == '옷') {
           try {
@@ -269,12 +252,10 @@ class PhotoService {
           }
         }
         
-        // 카테고리별 폴더로 파일 이동
         final movedFilePath = await _moveFileToCategoryFolder(file, ocrResult.category, userId);
         
-        // PhotoModel 생성 (이동된 파일 경로 사용)
         final photoModel = PhotoModel(
-          id: '', // Firestore에서 생성됨
+          id: '',
           localPath: movedFilePath,
           fileName: path.basename(movedFilePath),
           captureDate: screenshot.createDateTime,
@@ -292,13 +273,11 @@ class PhotoService {
             if (productSearch != null) 'product_search': productSearch,
           },
           tags: ocrResult.tags,
-          assetEntityId: screenshot.id, // AssetEntity ID 추가
+          assetEntityId: screenshot.id,
         );
 
-        // Firestore에 저장 또는 업데이트
         PhotoModel savedPhoto;
         if (forceReprocess) {
-          // 재분류 시: 기존 사진이 있는지 확인하고 업데이트
           final existingPhotos = await _firestoreService.getUserPhotos(userId, limit: 100);
           final existingPhoto = existingPhotos.firstWhere(
             (p) => p.assetEntityId == screenshot.id,
@@ -306,7 +285,6 @@ class PhotoService {
           );
           
           if (existingPhoto.id.isNotEmpty) {
-            // 기존 사진 업데이트
             final updatedPhoto = existingPhoto.copyWith(
               localPath: movedFilePath,
               fileName: path.basename(movedFilePath),
@@ -329,13 +307,11 @@ class PhotoService {
             savedPhoto = updatedPhoto;
             print('🔄 기존 사진 업데이트: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
           } else {
-            // 새 사진 생성
             final photoId = await _firestoreService.createPhoto(photoModel);
             savedPhoto = photoModel.copyWith(id: photoId);
             print('✅ 새 사진 생성: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
           }
         } else {
-          // 일반 처리: 새 사진 생성
           final photoId = await _firestoreService.createPhoto(photoModel);
           savedPhoto = photoModel.copyWith(id: photoId);
           print('✅ 사진 처리 완료: ${savedPhoto.fileName} → ${ocrResult.category} 폴더');
@@ -343,12 +319,10 @@ class PhotoService {
         
         processedPhotos.add(savedPhoto);
         
-        // 앨범 사진 개수 업데이트
         await _firestoreService.updateAlbumPhotoCount(savedPhoto.albumId);
         
         print('📁 저장 위치: $movedFilePath');
 
-        // === 기한 정보 추출 및 알림 생성 ===
         try {
           final deadlineResult = await _geminiService.extractDeadlineInfoFromFile(file);
           if (deadlineResult['has_deadline'] == true &&
@@ -391,7 +365,6 @@ class PhotoService {
         
       } catch (e) {
         print('Error processing screenshot: $e');
-        // 개별 사진 처리 실패는 전체 프로세스를 중단시키지 않음
         continue;
       }
     }
@@ -399,11 +372,10 @@ class PhotoService {
     return processedPhotos;
   }
 
-  // 카테고리에 해당하는 앨범 가져오기 또는 생성
+  @override
   Future<String> getOrCreateAlbumForCategory(String userId, String category) async {
     final albums = await _firestoreService.getUserAlbums(userId);
     
-    // 기존 앨범 찾기
     AlbumModel? existingAlbum;
     try {
       existingAlbum = albums.firstWhere((album) => album.name == category);
@@ -415,7 +387,6 @@ class PhotoService {
       return existingAlbum.id;
     }
 
-    // 새 앨범 생성
     final categoryIndex = AppConstants.defaultCategories.indexOf(category);
     final colorCode = categoryIndex >= 0 && categoryIndex < AppConstants.defaultCategories.length
         ? '#${(0xFF000000 | (categoryIndex * 0x123456)).toRadixString(16).substring(2)}'
@@ -436,7 +407,6 @@ class PhotoService {
     return await _firestoreService.createAlbum(newAlbum);
   }
 
-  // 카테고리별 아이콘 가져오기
   String _getCategoryIcon(String category) {
     switch (category) {
       case '정보/참고용':
@@ -460,7 +430,7 @@ class PhotoService {
     }
   }
 
-  // 사진을 다른 앨범으로 이동
+  @override
   Future<void> movePhotoToAlbum(String photoId, String newAlbumId) async {
     final photoDoc = await _firestoreService.firestore
         .collection(AppConstants.photosCollection)
@@ -472,7 +442,6 @@ class PhotoService {
     final photo = PhotoModel.fromJson({...photoDoc.data()!, 'id': photoId});
     final oldAlbumId = photo.albumId;
     
-    // 사진 업데이트
     final updatedPhoto = photo.copyWith(
       albumId: newAlbumId,
       updatedAt: DateTime.now(),
@@ -480,12 +449,11 @@ class PhotoService {
     
     await _firestoreService.updatePhoto(updatedPhoto);
     
-    // 앨범 사진 개수 업데이트
     await _firestoreService.updateAlbumPhotoCount(oldAlbumId);
     await _firestoreService.updateAlbumPhotoCount(newAlbumId);
   }
 
-  // 사진 즐겨찾기 토글
+  @override
   Future<void> togglePhotoFavorite(String photoId) async {
     final photoDoc = await _firestoreService.firestore
         .collection(AppConstants.photosCollection)
@@ -503,7 +471,7 @@ class PhotoService {
     await _firestoreService.updatePhoto(updatedPhoto);
   }
 
-  // 사진 삭제 (로컬 파일은 유지)
+  @override
   Future<void> deletePhoto(String photoId) async {
     final photoDoc = await _firestoreService.firestore
         .collection(AppConstants.photosCollection)
@@ -515,17 +483,15 @@ class PhotoService {
     final photo = PhotoModel.fromJson({...photoDoc.data()!, 'id': photoId});
     await _firestoreService.deletePhoto(photoId);
     
-    // 앨범 사진 개수 업데이트
     await _firestoreService.updateAlbumPhotoCount(photo.albumId);
   }
 
-  // 썸네일 생성
+  @override
   Future<Uint8List?> generateThumbnail(String localPath) async {
     try {
       final file = File(localPath);
       if (!await file.exists()) return null;
 
-      // photo_manager를 사용하여 썸네일 생성
       final assets = await PhotoManager.getAssetListRange(
         start: 0,
         end: 1,
@@ -545,9 +511,8 @@ class PhotoService {
     }
   }
 
-  // 사진 검색
+  @override
   Future<List<PhotoModel>> searchPhotos(String userId, String query) async {
-    // Firestore의 제한으로 인해 클라이언트 사이드에서 필터링
     final allPhotos = await _firestoreService.getUserPhotos(userId);
     
     return allPhotos.where((photo) {
@@ -564,7 +529,6 @@ class PhotoService {
     }).toList();
   }
 
-  // 카테고리별 폴더로 파일 이동 (사용자 접근 가능한 폴더)
   Future<String> _moveFileToCategoryFolder(File originalFile, String category, String userId) async {
     try {
       print('📁 파일 이동 시작: ${originalFile.path} → $category 폴더');
@@ -572,16 +536,13 @@ class PhotoService {
       String targetDir;
       
       if (Platform.isIOS) {
-        // iOS: Photos 앨범에 저장 (사용자가 접근 가능)
         return await _saveToPhotosAlbum(originalFile, category);
       } else if (Platform.isAndroid) {
-        // Android: Downloads 폴더에 카테고리별 폴더 생성 (사용자가 접근 가능)
         try {
           final downloadsDir = await getDownloadsDirectory();
           if (downloadsDir != null) {
             targetDir = path.join(downloadsDir.path, 'FinalCapture', category);
           } else {
-            // 폴백: 외부 저장소의 Downloads 폴더
             final externalDir = await getExternalStorageDirectory();
             if (externalDir != null) {
               targetDir = path.join(externalDir.path, '..', 'Download', 'FinalCapture', category);
@@ -592,25 +553,21 @@ class PhotoService {
           }
         } catch (e) {
           print('⚠️ 외부 저장소 접근 실패, 앱 폴더 사용: $e');
-          // 폴백: 앱 Documents 폴더
           final appDir = await getApplicationDocumentsDirectory();
           targetDir = path.join(appDir.path, 'FinalCapture', 'Photos', category);
         }
       } else {
-        // 기타 플랫폼: 앱 Documents 폴더
         final appDir = await getApplicationDocumentsDirectory();
         targetDir = path.join(appDir.path, 'FinalCapture', 'Photos', category);
       }
       
       final categoryDir = Directory(targetDir);
       
-      // 카테고리 폴더가 없으면 생성
       if (!await categoryDir.exists()) {
         await categoryDir.create(recursive: true);
         print('📂 카테고리 폴더 생성: ${categoryDir.path}');
       }
       
-      // 새 파일명 생성 (중복 방지)
       final originalFileName = path.basename(originalFile.path);
       final fileExtension = path.extension(originalFileName);
       final fileNameWithoutExt = path.basenameWithoutExtension(originalFileName);
@@ -619,11 +576,9 @@ class PhotoService {
       
       final newFilePath = path.join(categoryDir.path, newFileName);
       
-      // 파일 복사
       await originalFile.copy(newFilePath);
       print('📋 파일 복사 완료: $newFilePath');
       
-      // 원본 파일 삭제 (선택사항 - 스크린샷이므로 삭제)
       try {
         await originalFile.delete();
         print('🗑️ 원본 파일 삭제: ${originalFile.path}');
@@ -634,50 +589,43 @@ class PhotoService {
       return newFilePath;
     } catch (e) {
       print('❌ 파일 이동 실패: $e');
-      // 실패 시 원본 경로 반환
       return originalFile.path;
     }
   }
 
-  // iOS Photos 앨범에 저장
   Future<String> _saveToPhotosAlbum(File file, String category) async {
     try {
       print('📱 iOS Photos 앨범에 저장 중...');
       
-      // PhotoManager를 사용하여 Photos 앨범에 저장
       final result = await PhotoManager.editor.saveImage(
         await file.readAsBytes(),
         title: 'FinalCapture_${category}_${DateTime.now().millisecondsSinceEpoch}',
         filename: 'FinalCapture_${category}_${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
       
-      print('✅ Photos 앨범에 저장 완료: ${result.id}');
-      // Photos 앨범에 저장된 경우 원본 파일 경로를 반환 (Photos 앨범의 실제 경로는 접근 불가)
-      return file.path; // 원본 경로 유지
+      print('✅ Photos 앨범에 저장 완료: ${result?.id}');
+      return file.path;
     } catch (e) {
       print('❌ Photos 앨범 저장 실패: $e');
-      // 실패 시 원본 경로 반환
       return file.path;
     }
   }
 
-  // 카테고리별 폴더 경로 가져오기
+  @override
   Future<String> getCategoryFolderPath(String category, String userId) async {
     final appDir = await getApplicationDocumentsDirectory();
     return path.join(appDir.path, 'FinalCapture', 'Photos', category);
   }
 
-  // 모든 카테고리 폴더 생성
+  @override
   Future<void> createAllCategoryFolders(String userId) async {
     try {
       String baseDir;
       
       if (Platform.isIOS) {
-        // iOS에서는 Photos 앨범을 사용하므로 별도 폴더 생성 불필요
         print('📱 iOS: Photos 앨범에 저장됩니다');
         return;
       } else if (Platform.isAndroid) {
-        // Android: Downloads 폴더에 생성
         final downloadsDir = await getDownloadsDirectory();
         if (downloadsDir != null) {
           baseDir = path.join(downloadsDir.path, 'FinalCapture');
@@ -691,20 +639,17 @@ class PhotoService {
           }
         }
       } else {
-        // 기타 플랫폼: 앱 Documents 폴더
         final appDir = await getApplicationDocumentsDirectory();
         baseDir = path.join(appDir.path, 'FinalCapture', 'Photos');
       }
       
       final baseDirectory = Directory(baseDir);
       
-      // 기본 디렉토리 생성
       if (!await baseDirectory.exists()) {
         await baseDirectory.create(recursive: true);
         print('📂 기본 폴더 생성: ${baseDirectory.path}');
       }
       
-      // 각 카테고리별 폴더 생성
       for (final category in AppConstants.defaultCategories) {
         final categoryDir = Directory(path.join(baseDir, category));
         if (!await categoryDir.exists()) {
@@ -719,7 +664,7 @@ class PhotoService {
     }
   }
 
-  // 사용자에게 폴더 위치 정보 제공
+  @override
   Future<String> getFolderLocationInfo() async {
     if (Platform.isIOS) {
       return 'iOS Photos 앨범에 저장됩니다. Photos 앱에서 확인하세요.';
@@ -738,43 +683,24 @@ class PhotoService {
       return '앱 전용 폴더에 저장됩니다.';
     }
   }
-}
 
-// Gemini OCR 결과 모델
-class OCRResult {
-  final String text;
-  final String category;
-  final double confidence;
-  final List<String> tags;
-  final String reasoning;
-
-  OCRResult({
-    required this.text,
-    required this.category,
-    required this.confidence,
-    required this.tags,
-    required this.reasoning,
-  });
-}
-
-// PhotoService에 필요한 메서드들 추가
-extension PhotoServiceExtensions on PhotoService {
-  // 이미지 처리
+  // From Extension
+  @override
   Future<OCRResult> processImage(File file) async {
     return await _geminiService.processImage(file);
   }
   
-  // 바이트 데이터로 이미지 처리 (웹용)
+  @override
   Future<OCRResult> processImageBytes(Uint8List bytes, String fileName) async {
     return await _geminiService.processImageBytes(bytes, fileName);
   }
   
-  // 사진 생성
+  @override
   Future<String> createPhoto(PhotoModel photo) async {
     return await _firestoreService.createPhoto(photo);
   }
   
-  // 앨범 사진 개수 업데이트
+  @override
   Future<void> updateAlbumPhotoCount(String albumId) async {
     await _firestoreService.updateAlbumPhotoCount(albumId);
   }

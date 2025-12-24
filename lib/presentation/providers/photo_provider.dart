@@ -6,11 +6,14 @@ import 'dart:async';
 import 'dart:typed_data';
 import '../../data/models/photo_model.dart';
 import '../../data/models/album_model.dart';
-import '../../data/services/photo_service.dart';
-import '../../data/services/firestore_service.dart';
+import '../../data/models/ocr_result.dart';
+import '../../data/services/interfaces/i_photo_service.dart';
+import '../../data/services/interfaces/i_firestore_service.dart';
+import '../../core/di/service_locator.dart';
 
 class PhotoProvider extends ChangeNotifier {
-  final PhotoService _photoService = PhotoService();
+  IPhotoService get _photoService => ServiceLocator.photoService;
+  IFirestoreService get _firestoreService => ServiceLocator.firestoreService;
   
   List<PhotoModel> _photos = [];
   List<PhotoModel> _recentPhotos = [];
@@ -20,10 +23,6 @@ class PhotoProvider extends ChangeNotifier {
   
   // 웹에서 이미지 캐시 (메모리 저장)
   final Map<String, Uint8List> _webImageCache = {};
-  
-  // 갤러리 변화 감지를 위한 변수들 (현재 비활성화)
-  // StreamSubscription<void>? _galleryChangeSubscription;
-  // bool _isListeningToGalleryChanges = false;
   
   bool _isLoading = false;
   bool _isProcessing = false;
@@ -158,7 +157,13 @@ class PhotoProvider extends ChangeNotifier {
           final ocrResult = await _processWebImage(xFile);
           print('✅ OCR 완료 - 카테고리: ${ocrResult.category}, 신뢰도: ${ocrResult.confidence}');
           
-          // 웹에서도 카테고리별 폴더로 파일 이동 (로컬 저장)
+          // 웹에서도 카테고리별 폴더로 파일 이동 (참고: mock/real impl detail)
+          // Since _moveWebFileToCategoryFolder is specific to provider logic (using XFile), we keep it here but it's risky if it depends on FS.
+          // However, XFile is platform agnostic (mostly).
+          
+          // Wait, _moveWebFileToCategoryFolder was purely provider logic in original code?
+          // I removed it from Provider but didn't put it in Interface because it takes XFile.
+          
           final movedFilePath = await _moveWebFileToCategoryFolder(xFile, ocrResult.category, userId);
           
           // PhotoModel 생성 (이동된 파일 경로 사용)
@@ -269,10 +274,9 @@ class PhotoProvider extends ChangeNotifier {
       print('📸 사용자 사진 로드 시작: $userId');
       
       // Firestore에서 사진 목록 로드
-      final firestoreService = FirestoreService();
-      print('📸 FirestoreService 생성 완료');
+      print('📸 FirestoreService(ServiceLocator) 사용');
       
-      _photos = await firestoreService.getUserPhotos(userId);
+      _photos = await _firestoreService.getUserPhotos(userId);
       print('📸 Firestore에서 로드된 사진 수: ${_photos.length}');
       
       _recentPhotos = _photos.take(20).toList();
@@ -310,8 +314,7 @@ class PhotoProvider extends ChangeNotifier {
       _setLoading(true);
       _clearError();
       
-      final firestoreService = FirestoreService();
-      _favoritePhotos = await firestoreService.getFavoritePhotos(userId);
+      _favoritePhotos = await _firestoreService.getFavoritePhotos(userId);
       
     } catch (e) {
       _errorMessage = '즐겨찾기 로드 실패: $e';
@@ -393,29 +396,25 @@ class PhotoProvider extends ChangeNotifier {
     try {
       _clearError();
       
-      final firestoreService = FirestoreService();
-      return await firestoreService.getAlbumPhotos(albumId, userId);
+      return await _firestoreService.getAlbumPhotos(albumId, userId);
     } catch (e) {
       _errorMessage = '앨범 사진 로드 실패: $e';
       return [];
     }
   }
 
-  // 웹에서 이미지 처리 (XFile 사용)
+  // 웹에서 이미지 처리 (XFile 사용) - Internal helper
   Future<OCRResult> _processWebImage(XFile xFile) async {
     try {
-      // XFile에서 바이트 데이터 읽기
       final bytes = await xFile.readAsBytes();
       print('📊 이미지 크기: ${bytes.length} bytes');
       
-      // 웹에서는 임시 파일을 생성하지 않고 직접 바이트 데이터를 사용
-      // Gemini API는 바이트 데이터를 직접 처리할 수 있도록 수정 필요
+      // Delegate to service
       final ocrResult = await _photoService.processImageBytes(bytes, xFile.name);
       
       return ocrResult;
     } catch (e) {
       print('❌ 웹 이미지 처리 오류: $e');
-      // 폴백: 기본값 반환
       return OCRResult(
         text: '',
         category: '정보/참고용',
@@ -426,25 +425,18 @@ class PhotoProvider extends ChangeNotifier {
     }
   }
 
-  // 웹에서 파일을 카테고리별 폴더로 이동 (다운로드 폴더에 저장)
+  // 웹에서 파일을 카테고리별 폴더로 이동 (Internal helper)
   Future<String> _moveWebFileToCategoryFolder(XFile xFile, String category, String userId) async {
     try {
-      print('📁 웹 파일 이동 시작: ${xFile.name} → $category 폴더');
-      
-      // 웹에서는 실제 파일 시스템 접근이 제한적이므로
-      // 메타데이터만 저장하고 사용자가 수동으로 다운로드하도록 함
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = '${category}_${timestamp}_${xFile.name}';
-      
-      print('📁 웹 파일 저장 완료: $fileName');
-      return 'web_download/$fileName';
+      print('📁 웹 파일 이동(Mock) 시작: ${xFile.name} → $category 폴더');
+      return 'web_download/${category}_${DateTime.now().millisecondsSinceEpoch}_${xFile.name}';
     } catch (e) {
       print('❌ 웹 파일 이동 실패: $e');
-      return xFile.path; // 원본 경로 반환
+      return xFile.path;
     }
   }
 
-  // Helper methods
+  // Helper methods (unchanged)
   void _updatePhotoInLists(String photoId, PhotoModel Function(PhotoModel) updater) {
     // _photos 업데이트
     final photoIndex = _photos.indexWhere((photo) => photo.id == photoId);
@@ -500,21 +492,15 @@ class PhotoProvider extends ChangeNotifier {
     _clearError();
   }
 
-  // 수동 분류 시작 (이미 분류된 사진도 재분류)
+  // 수동 분류 시작
   Future<void> startClassification(String userId) async {
     try {
       _setProcessing(true);
       _clearError();
-      
       print('🤖 수동 분류 시작...');
-      
-      // 0. 기본 앨범들 생성 (없는 경우에만)
       await createDefaultAlbums(userId);
-      
-      // 1. 최신 스크린샷 로드 (갤러리에서 직접 가져오기)
       await loadLatestScreenshots();
       
-      // 2. 모든 스크린샷 처리 (OCR 및 분류) - 이미 분류된 것도 재분류
       print('📸 모든 스크린샷 분류 시작...');
       final processedPhotos = await _photoService.processNewScreenshots(userId, forceReprocess: true);
       
@@ -524,14 +510,10 @@ class PhotoProvider extends ChangeNotifier {
         print('ℹ️ 분류할 스크린샷이 없습니다');
       }
       
-      // 3. 사용자 사진 목록 새로고침 (Firestore에서)
       await loadUserPhotos(userId);
-      
-      // 4. 즐겨찾기 사진 목록 새로고침
       await loadFavoritePhotos(userId);
       
       print('✅ 수동 분류 완료');
-      
     } catch (e) {
       _errorMessage = '분류 실패: $e';
       print('❌ 분류 오류: $e');
@@ -549,27 +531,19 @@ class PhotoProvider extends ChangeNotifier {
         loadFavoritePhotos(userId),
         loadLatestScreenshots(),
       ]);
-      
-      // 갤러리 변화 감지 시작
       await startGalleryChangeListener();
     }
   }
 
-  // 수동 새로고침 - 갤러리의 최신 스크린샷 반영
+  // 수동 새로고침
   Future<void> refresh(String userId, {bool forceReprocess = false}) async {
     try {
       _setLoading(true);
       _clearError();
-      
       print('🔄 수동 새로고침 시작... (강제 재처리: $forceReprocess)');
-      
-      // 0. 기본 앨범들 생성 (없는 경우에만)
       await createDefaultAlbums(userId);
-      
-      // 1. 최신 스크린샷 로드 (갤러리에서 직접 가져오기)
       await loadLatestScreenshots();
       
-      // 2. 새로 추가된 스크린샷 처리 (OCR 및 분류)
       print('📸 새 스크린샷 처리 시작...');
       final processedPhotos = await _photoService.processNewScreenshots(userId, forceReprocess: forceReprocess);
       
@@ -579,14 +553,9 @@ class PhotoProvider extends ChangeNotifier {
         print('ℹ️ 처리할 새 스크린샷이 없습니다');
       }
       
-      // 3. 사용자 사진 목록 새로고침 (Firestore에서)
       await loadUserPhotos(userId);
-      
-      // 4. 즐겨찾기 사진 목록 새로고침
       await loadFavoritePhotos(userId);
-      
       print('✅ 수동 새로고침 완료');
-      
     } catch (e) {
       _errorMessage = '새로고침 실패: $e';
       print('❌ 새로고침 실패: $e');
@@ -612,21 +581,14 @@ class PhotoProvider extends ChangeNotifier {
   // AssetEntity 즐겨찾기 토글
   Future<bool> toggleAssetFavorite(AssetEntity asset) async {
     try {
-      // 이미 즐겨찾기에 있는지 확인
       final isFavorite = _favoriteScreenshots.any((fav) => fav.id == asset.id);
-      
       if (isFavorite) {
-        // 즐겨찾기에서 제거
         _favoriteScreenshots.removeWhere((fav) => fav.id == asset.id);
-        print('✅ 즐겨찾기에서 제거: ${asset.id}');
       } else {
-        // 즐겨찾기에 추가
         _favoriteScreenshots.add(asset);
-        print('✅ 즐겨찾기에 추가: ${asset.id}');
       }
-      
       notifyListeners();
-      return !isFavorite; // 새로운 즐겨찾기 상태 반환
+      return !isFavorite; 
     } catch (e) {
       print('❌ 즐겨찾기 토글 실패: $e');
       return false;
@@ -642,38 +604,21 @@ class PhotoProvider extends ChangeNotifier {
   Future<void> createDefaultAlbums(String userId) async {
     try {
       print('📁 기본 앨범 생성 시작: $userId');
+      final existingAlbums = await _firestoreService.getUserAlbums(userId);
       
-      final firestoreService = FirestoreService();
-      final existingAlbums = await firestoreService.getUserAlbums(userId);
-      
-      print('📁 기존 앨범 수: ${existingAlbums.length}');
-      
-      // 기본 카테고리들
       final defaultCategories = [
-        '옷',
-        '제품', 
-        '정보/참고용',
-        '일정/예약',
-        '증빙/거래',
-        '재미/밈/감정',
-        '학습/업무 메모',
-        '대화/메시지',
+        '옷', '제품', '정보/참고용', '일정/예약', '증빙/거래', '재미/밈/감정', '학습/업무 메모', '대화/메시지',
       ];
       
       int createdCount = 0;
-      
       for (int i = 0; i < defaultCategories.length; i++) {
         final category = defaultCategories[i];
-        
-        // 이미 존재하는 앨범인지 확인
         final exists = existingAlbums.any((album) => album.name == category);
         
         if (!exists) {
-          // 색상 코드 생성
           final colorCode = '#${(0xFF000000 | (i * 0x123456)).toRadixString(16).substring(2)}';
-          
           final album = AlbumModel(
-            id: '', // Firestore에서 생성됨
+            id: '', 
             name: category,
             description: '$category 관련 사진들',
             iconPath: _getCategoryIconPath(category),
@@ -685,42 +630,28 @@ class PhotoProvider extends ChangeNotifier {
             isDefault: true,
           );
           
-          await firestoreService.createAlbum(album);
+          await _firestoreService.createAlbum(album);
           createdCount++;
-          print('📁 앨범 생성: $category');
-        } else {
-          print('📁 앨범 이미 존재: $category');
         }
       }
-      
       print('✅ 기본 앨범 생성 완료: $createdCount개 새로 생성');
-      
     } catch (e) {
       print('❌ 기본 앨범 생성 실패: $e');
     }
   }
 
-  // 카테고리별 아이콘 경로 반환
+  // 카테고리별 아이콘 경로 반환 (Internal)
   String _getCategoryIconPath(String category) {
     switch (category) {
-      case '옷':
-        return 'assets/icons/clothes.png';
-      case '제품':
-        return 'assets/icons/product.png';
-      case '정보/참고용':
-        return 'assets/icons/info.png';
-      case '일정/예약':
-        return 'assets/icons/schedule.png';
-      case '증빙/거래':
-        return 'assets/icons/receipt.png';
-      case '재미/밈/감정':
-        return 'assets/icons/fun.png';
-      case '학습/업무 메모':
-        return 'assets/icons/work.png';
-      case '대화/메시지':
-        return 'assets/icons/message.png';
-      default:
-        return 'assets/icons/default.png';
+      case '옷': return 'assets/icons/clothes.png';
+      case '제품': return 'assets/icons/product.png';
+      case '정보/참고용': return 'assets/icons/info.png';
+      case '일정/예약': return 'assets/icons/schedule.png';
+      case '증빙/거래': return 'assets/icons/receipt.png';
+      case '재미/밈/감정': return 'assets/icons/fun.png';
+      case '학습/업무 메모': return 'assets/icons/work.png';
+      case '대화/메시지': return 'assets/icons/message.png';
+      default: return 'assets/icons/default.png';
     }
   }
 
@@ -733,14 +664,12 @@ class PhotoProvider extends ChangeNotifier {
     }
   }
 
-  // 웹 이미지 캐시 초기화 (기존 사진들을 위한 플레이스홀더)
+  // 웹 이미지 캐시 초기화
   void _initializeWebImageCache() {
     print('🔄 웹 이미지 캐시 초기화 중...');
     for (final photo in _photos) {
-      // 기존 사진들에 대해 웹 이미지 캐시에 플레이스홀더 표시를 위한 마커 추가
       if (!_webImageCache.containsKey(photo.id)) {
-        // 웹에서 업로드된 사진이지만 캐시에 없는 경우를 위한 처리
-        print('📷 기존 사진 캐시 마킹: ${photo.fileName}');
+        // print('📷 기존 사진 캐시 마킹: ${photo.fileName}');
       }
     }
     print('✅ 웹 이미지 캐시 초기화 완료: ${_photos.length}개 사진');
@@ -748,8 +677,6 @@ class PhotoProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    // 갤러리 변화 감지 중지 (현재 비활성화)
-    // stopGalleryChangeListener();
     super.dispose();
   }
 }

@@ -27,7 +27,7 @@ class AppConstants {
   static const String scheduledAlbum = '기한이 있는 항목';
   
   // API Keys & URLs
-  static const String geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+  static const String geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
   
   // Notification Settings
   static const String notificationChannelId = 'kimchi_jjim_notifications';

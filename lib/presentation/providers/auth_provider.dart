@@ -1,33 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../data/models/user_model.dart';
-import '../../data/services/auth_service.dart';
+import '../../data/services/interfaces/i_auth_service.dart';
+import '../../core/di/service_locator.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final AuthService _authService = AuthService();
+  IAuthService get _authService => ServiceLocator.authService;
   
   UserModel? _currentUser;
-  User? _firebaseUser;
   bool _isLoading = false;
   String? _errorMessage;
 
   // Getters
   UserModel? get currentUser => _currentUser;
-  User? get firebaseUser => _firebaseUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _firebaseUser != null;
+  bool get isAuthenticated => _currentUser != null;
 
   AuthProvider() {
     _init();
   }
 
   void _init() {
-    // Firebase Auth 상태 변화 리스너
-    _authService.authStateChanges.listen((User? user) {
-      _firebaseUser = user;
+    // Auth 상태 변화 리스너
+    _authService.authStateChanges.listen((UserModel? user) {
+      _currentUser = user;
       if (user != null) {
-        _loadUserData(user.uid);
+        _loadUserData();
       } else {
         _currentUser = null;
       }
@@ -36,9 +34,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // 사용자 데이터 로드
-  Future<void> _loadUserData(String uid) async {
+  Future<void> _loadUserData() async {
     try {
-      _currentUser = await _authService.getCurrentUserData();
+      final userData = await _authService.getCurrentUserData();
+      if (userData != null) {
+        _currentUser = userData;
+      }
     } catch (e) {
       _errorMessage = '사용자 정보를 불러오는데 실패했습니다: $e';
     }
@@ -51,9 +52,10 @@ class AuthProvider extends ChangeNotifier {
       _setLoading(true);
       _clearError();
       
-      _currentUser = await _authService.signInWithGoogle();
+      final user = await _authService.signInWithGoogle();
       
-      if (_currentUser != null) {
+      if (user != null) {
+        _currentUser = user; // Optimistic update
         return true;
       } else {
         _errorMessage = '로그인이 취소되었습니다.';
@@ -73,9 +75,10 @@ class AuthProvider extends ChangeNotifier {
       _setLoading(true);
       _clearError();
       
-      _currentUser = await _authService.signInWithApple();
+      final user = await _authService.signInWithApple();
       
-      if (_currentUser != null) {
+      if (user != null) {
+        _currentUser = user;
         return true;
       } else {
         _errorMessage = '로그인이 취소되었습니다.';
@@ -97,7 +100,6 @@ class AuthProvider extends ChangeNotifier {
       
       await _authService.signOut();
       _currentUser = null;
-      _firebaseUser = null;
       
     } catch (e) {
       _errorMessage = '로그아웃 실패: $e';
@@ -114,7 +116,6 @@ class AuthProvider extends ChangeNotifier {
       
       await _authService.deleteAccount();
       _currentUser = null;
-      _firebaseUser = null;
       
       return true;
     } catch (e) {
@@ -139,7 +140,7 @@ class AuthProvider extends ChangeNotifier {
         photoUrl: photoUrl,
       );
       
-      // 로컬 사용자 정보 업데이트
+      // 로컬 사용자 정보 업데이트 (낙관적 업데이트)
       if (_currentUser != null) {
         _currentUser = _currentUser!.copyWith(
           displayName: displayName,

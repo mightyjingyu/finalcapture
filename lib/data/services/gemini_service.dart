@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/secrets.dart';
-import 'photo_service.dart';
+import '../models/ocr_result.dart';
 import 'product_search_service.dart';
 import 'deadline_service.dart';
 
@@ -18,8 +18,8 @@ class GeminiService {
   }
   
   // v1 API 엔드포인트 (검증된 모델명 사용)
-  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1';
-  static const String _modelName = 'gemini-1.5-flash';
+  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+  static const String _modelName = 'gemini-2.0-flash';
   
   // 제품 검색 서비스
   final ProductSearchService _productSearchService = ProductSearchService();
@@ -300,7 +300,7 @@ class GeminiService {
       // API 키를 URL 쿼리 파라미터로 전달
       final url = Uri.parse('$_baseUrl/models/$_modelName:generateContent?key=$geminiApiKey');
       
-      print('🔑 API 키 확인: ${geminiApiKey.isNotEmpty ? "설정됨 (${geminiApiKey.substring(0, 10)}...)" : "없음"}');
+      print('🔑 API 키 확인: ${geminiApiKey.isNotEmpty ? "설정됨" : "없음"}');
       
       final List<Map<String, dynamic>> parts = [
         {'text': prompt},
@@ -346,7 +346,7 @@ class GeminiService {
         ]
       };
 
-      print('📡 REST API 호출: ${url.toString().replaceAll(geminiApiKey, '***')}');
+      print('📡 REST API 호출: $_baseUrl/models/$_modelName:generateContent');
       print('📊 요청 본문 크기: ${json.encode(requestBody).length} bytes');
       print('🖼️ 이미지 데이터 크기: ${base64Image.length} characters');
       

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../data/models/album_model.dart';
-import '../../data/services/firestore_service.dart';
+import '../../data/services/interfaces/i_firestore_service.dart';
+import '../../core/di/service_locator.dart';
 import '../../core/constants/app_constants.dart';
 
 class AlbumProvider extends ChangeNotifier {
-  final FirestoreService _firestoreService = FirestoreService();
+  IFirestoreService get _firestoreService => ServiceLocator.firestoreService;
   
   List<AlbumModel> _albums = [];
   List<AlbumModel> _pinnedAlbums = [];
@@ -253,9 +254,6 @@ class AlbumProvider extends ChangeNotifier {
       
       // 기본 카테고리 앨범들 생성 (중복 체크)
       final defaultAlbums = <AlbumModel>[];
-      
-      // 특별 앨범들 (이제는 빠른 접근용이므로 별도 앨범으로 생성하지 않음)
-      // 대신 카테고리 앨범들만 생성
       
       // 카테고리 앨범들만 생성
       for (int i = 0; i < AppConstants.defaultCategories.length; i++) {

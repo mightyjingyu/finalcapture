@@ -4,14 +4,16 @@ import '../models/album_model.dart';
 import '../models/photo_model.dart';
 import '../models/reminder_model.dart';
 import '../../core/constants/app_constants.dart';
+import 'interfaces/i_firestore_service.dart';
 
-class FirestoreService {
+class FirebaseFirestoreService implements IFirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
-  // _firestore getter for external access
+  // _firestore getter for external access (if needed, but interface hides it)
   FirebaseFirestore get firestore => _firestore;
 
   // User CRUD Operations
+  @override
   Future<void> createOrUpdateUser(UserModel user) async {
     await _firestore
         .collection(AppConstants.usersCollection)
@@ -19,6 +21,7 @@ class FirestoreService {
         .set(user.toJson(), SetOptions(merge: true));
   }
 
+  @override
   Future<UserModel?> getUser(String uid) async {
     final doc = await _firestore
         .collection(AppConstants.usersCollection)
@@ -31,6 +34,7 @@ class FirestoreService {
     return null;
   }
 
+  @override
   Future<void> deleteUser(String uid) async {
     final batch = _firestore.batch();
     
@@ -71,6 +75,7 @@ class FirestoreService {
   }
 
   // Album CRUD Operations
+  @override
   Future<String> createAlbum(AlbumModel album) async {
     final docRef = await _firestore
         .collection(AppConstants.albumsCollection)
@@ -78,6 +83,7 @@ class FirestoreService {
     return docRef.id;
   }
 
+  @override
   Future<void> updateAlbum(AlbumModel album) async {
     await _firestore
         .collection(AppConstants.albumsCollection)
@@ -85,6 +91,7 @@ class FirestoreService {
         .update(album.toJson());
   }
 
+  @override
   Future<void> deleteAlbum(String albumId) async {
     final batch = _firestore.batch();
     
@@ -104,6 +111,7 @@ class FirestoreService {
     await batch.commit();
   }
 
+  @override
   Future<List<AlbumModel>> getUserAlbums(String userId) async {
     final snapshot = await _firestore
         .collection(AppConstants.albumsCollection)
@@ -126,6 +134,7 @@ class FirestoreService {
     return albums;
   }
 
+  @override
   Stream<List<AlbumModel>> getUserAlbumsStream(String userId) {
     return _firestore
         .collection(AppConstants.albumsCollection)
@@ -149,6 +158,7 @@ class FirestoreService {
   }
 
   // Photo CRUD Operations
+  @override
   Future<String> createPhoto(PhotoModel photo) async {
     final docRef = await _firestore
         .collection(AppConstants.photosCollection)
@@ -156,6 +166,7 @@ class FirestoreService {
     return docRef.id;
   }
 
+  @override
   Future<void> updatePhoto(PhotoModel photo) async {
     await _firestore
         .collection(AppConstants.photosCollection)
@@ -163,6 +174,7 @@ class FirestoreService {
         .update(photo.toJson());
   }
 
+  @override
   Future<void> deletePhoto(String photoId) async {
     final batch = _firestore.batch();
     
@@ -182,6 +194,7 @@ class FirestoreService {
     await batch.commit();
   }
 
+  @override
   Future<List<PhotoModel>> getAlbumPhotos(String albumId, String userId) async {
     final snapshot = await _firestore
         .collection(AppConstants.photosCollection)
@@ -195,6 +208,7 @@ class FirestoreService {
         .toList();
   }
 
+  @override
   Stream<List<PhotoModel>> getAlbumPhotosStream(String albumId, String userId) {
     return _firestore
         .collection(AppConstants.photosCollection)
@@ -207,6 +221,7 @@ class FirestoreService {
             .toList());
   }
 
+  @override
   Future<List<PhotoModel>> getUserPhotos(String userId, {int? limit}) async {
     print('📸 Firestore getUserPhotos 시작: $userId');
     print('🔍 쿼리 조건: userId = $userId');
@@ -247,6 +262,7 @@ class FirestoreService {
     }
   }
 
+  @override
   Future<List<PhotoModel>> getFavoritePhotos(String userId) async {
     final snapshot = await _firestore
         .collection(AppConstants.photosCollection)
@@ -261,6 +277,7 @@ class FirestoreService {
   }
 
   // Reminder CRUD Operations
+  @override
   Future<String> createReminder(ReminderModel reminder) async {
     final docRef = await _firestore
         .collection(AppConstants.remindersCollection)
@@ -268,6 +285,7 @@ class FirestoreService {
     return docRef.id;
   }
 
+  @override
   Future<void> updateReminder(ReminderModel reminder) async {
     await _firestore
         .collection(AppConstants.remindersCollection)
@@ -275,6 +293,7 @@ class FirestoreService {
         .update(reminder.toJson());
   }
 
+  @override
   Future<void> deleteReminder(String reminderId) async {
     await _firestore
         .collection(AppConstants.remindersCollection)
@@ -282,6 +301,7 @@ class FirestoreService {
         .delete();
   }
 
+  @override
   Future<List<ReminderModel>> getUserReminders(String userId) async {
     final snapshot = await _firestore
         .collection(AppConstants.remindersCollection)
@@ -294,6 +314,7 @@ class FirestoreService {
         .toList();
   }
 
+  @override
   Stream<List<ReminderModel>> getUserRemindersStream(String userId) {
     return _firestore
         .collection(AppConstants.remindersCollection)
@@ -305,6 +326,7 @@ class FirestoreService {
             .toList());
   }
 
+  @override
   Future<List<ReminderModel>> getTodayReminders(String userId) async {
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
@@ -325,6 +347,7 @@ class FirestoreService {
   }
 
   // Batch Operations
+  @override
   Future<void> batchUpdatePhotos(List<PhotoModel> photos) async {
     final batch = _firestore.batch();
     
@@ -337,6 +360,7 @@ class FirestoreService {
   }
 
   // Album Photo Count Update
+  @override
   Future<void> updateAlbumPhotoCount(String albumId) async {
     final photoCount = await _firestore
         .collection(AppConstants.photosCollection)

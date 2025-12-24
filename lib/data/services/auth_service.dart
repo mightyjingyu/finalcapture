@@ -4,8 +4,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../models/user_model.dart';
 import 'firestore_service.dart';
+import 'interfaces/i_auth_service.dart';
 
-class AuthService {
+class FirebaseAuthService implements IAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId: kIsWeb ? '797406662895-s2bhm10nh4gpkie9crcu37qdi9oq1ekh.apps.googleusercontent.com' : null,
@@ -14,15 +15,39 @@ class AuthService {
       'profile',
     ],
   );
-  final FirestoreService _firestoreService = FirestoreService();
+  // Will be renamed in next step (Actually already renamed in previous step, but I am fixing the mapping now)
+  final FirebaseFirestoreService _firestoreService = FirebaseFirestoreService();
 
-  // 현재 로그인된 사용자
-  User? get currentUser => _auth.currentUser;
+  @override
+  UserModel? get currentUser {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    return UserModel(
+      uid: user.uid,
+      email: user.email ?? '',
+      displayName: user.displayName,
+      photoUrl: user.photoURL,
+      createdAt: DateTime.now(), // Fallback
+      lastLoginAt: DateTime.now(),
+    );
+  }
   
-  // 사용자 상태 스트림
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  @override
+  Stream<UserModel?> get authStateChanges {
+    return _auth.authStateChanges().map((user) {
+      if (user == null) return null;
+      return UserModel(
+        uid: user.uid,
+        email: user.email ?? '',
+        displayName: user.displayName,
+        photoUrl: user.photoURL,
+        createdAt: DateTime.now(), // Fallback
+        lastLoginAt: DateTime.now(),
+      );
+    });
+  }
 
-  // Google 로그인
+  @override
   Future<UserModel?> signInWithGoogle() async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -59,7 +84,7 @@ class AuthService {
     return null;
   }
 
-  // Apple 로그인
+  @override
   Future<UserModel?> signInWithApple() async {
     try {
       final credential = await SignInWithApple.getAppleIDCredential(
@@ -105,7 +130,7 @@ class AuthService {
     return null;
   }
 
-  // 로그아웃
+  @override
   Future<void> signOut() async {
     await Future.wait([
       _auth.signOut(),
@@ -113,7 +138,7 @@ class AuthService {
     ]);
   }
 
-  // 계정 삭제
+  @override
   Future<void> deleteAccount() async {
     final user = _auth.currentUser;
     if (user != null) {
@@ -125,7 +150,7 @@ class AuthService {
     }
   }
 
-  // 현재 사용자 정보 가져오기
+  @override
   Future<UserModel?> getCurrentUserData() async {
     final user = _auth.currentUser;
     if (user != null) {
@@ -134,7 +159,7 @@ class AuthService {
     return null;
   }
 
-  // 사용자 프로필 업데이트
+  @override
   Future<void> updateUserProfile({
     String? displayName,
     String? photoUrl,
