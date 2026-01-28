@@ -54,3 +54,6 @@ app.*.map.json
 **/google-services.json
 **/GoogleService-Info.plist
 **/firebase_options.dart
+
+# Duplicate project directory
+finalcapture/

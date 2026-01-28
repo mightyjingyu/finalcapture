@@ -181,6 +181,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
         ),
         actions: [
+          // 기존 사용자용 분류 시작 버튼 (사진이 1개 이상일 때만 표시)
+          Consumer<PhotoProvider>(
+            builder: (context, photoProvider, child) {
+              if (photoProvider.latestScreenshots.isNotEmpty) {
+                return IconButton(
+                  onPressed: photoProvider.isProcessing ? null : () => _startClassification(),
+                  icon: photoProvider.isProcessing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome),
+                  tooltip: '사진 분류 시작',
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           // 강제 OCR 재처리 버튼
           IconButton(
             onPressed: () async {
@@ -350,36 +369,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return Column(
       children: [
-        // 분류시작 버튼
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          child: ElevatedButton.icon(
-            onPressed: photoProvider.isProcessing ? null : () => _startClassification(),
-            icon: photoProvider.isProcessing 
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.auto_awesome),
-            label: Text(
-              photoProvider.isProcessing ? '분류 중...' : '분류시작',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+        // 초기 사용자용 분류시작 버튼 (사진이 0개일 때만 표시)
+        if (photoProvider.latestScreenshots.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            child: ElevatedButton.icon(
+              onPressed: photoProvider.isProcessing ? null : () => _startClassification(),
+              icon: photoProvider.isProcessing 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome),
+              label: Text(
+                photoProvider.isProcessing ? '분류 중...' : '사진 불러오기 및 분류 시작',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
-        ),
         // 사진 그리드
         Expanded(
           child: GridView.builder(
